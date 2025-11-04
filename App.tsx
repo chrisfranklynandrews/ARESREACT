@@ -45,8 +45,8 @@ import {
   ENEMY_DEATH_FADE_DURATION,
   UPGRADE_BAR_HEIGHT,
   PLAYER_HIT_EFFECT_DURATION,
-  INITIAL_GUN_LEVEL_COST,
-  MAX_GUN_LEVEL,
+  INITIAL_SHIP_LEVEL_COST,
+  MAX_SHIP_LEVEL,
   HOMING_MISSILE_WIDTH,
   HOMING_MISSILE_HEIGHT,
   HOMING_MISSILE_SPEED,
@@ -273,7 +273,7 @@ const BulletPowerIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
 );
 
-const GunLevelIcon: React.FC = () => (
+const ShipLevelIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="m5 19 7-7 7 7"/></svg>
 );
 
@@ -318,12 +318,12 @@ type GameState = {
   money: number;
   bulletRateLevel: number;
   bulletPowerLevel: number;
-  gunLevel: number;
+  shipLevel: number;
   interestLevel: number;
   shieldLevel: number;
   bulletRateCost: number;
   bulletPowerCost: number;
-  gunLevelCost: number;
+  shipLevelCost: number;
   interestCost: number;
   shieldCost: number;
 };
@@ -336,7 +336,7 @@ type Action =
   | { type: 'TICK' }
   | { type: 'UPGRADE_BULLET_RATE' }
   | { type: 'UPGRADE_BULLET_POWER' }
-  | { type: 'UPGRADE_GUN_LEVEL' }
+  | { type: 'UPGRADE_SHIP_LEVEL' }
   | { type: 'UPGRADE_INTEREST' }
   | { type: 'UPGRADE_SHIELD' };
   
@@ -406,12 +406,12 @@ const createInitialState = (): GameState => {
     money: 0,
     bulletRateLevel: 1,
     bulletPowerLevel: 1,
-    gunLevel: 1,
+    shipLevel: 1,
     interestLevel: 1,
     shieldLevel: 1,
     bulletRateCost: INITIAL_BULLET_RATE_COST,
     bulletPowerCost: INITIAL_BULLET_POWER_COST,
-    gunLevelCost: INITIAL_GUN_LEVEL_COST,
+    shipLevelCost: INITIAL_SHIP_LEVEL_COST,
     interestCost: INITIAL_INTEREST_COST,
     shieldCost: INITIAL_SHIELD_COST,
   };
@@ -483,13 +483,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         bulletPowerCost: Math.floor(state.bulletPowerCost * UPGRADE_COST_MULTIPLIER),
       };
     }
-    case 'UPGRADE_GUN_LEVEL': {
-        if (state.money < state.gunLevelCost || state.gunLevel >= MAX_GUN_LEVEL) return state;
+    case 'UPGRADE_SHIP_LEVEL': {
+        if (state.money < state.shipLevelCost || state.shipLevel >= MAX_SHIP_LEVEL) return state;
         return {
           ...state,
-          money: state.money - state.gunLevelCost,
-          gunLevel: state.gunLevel + 1,
-          gunLevelCost: Math.floor(state.gunLevelCost * UPGRADE_COST_MULTIPLIER),
+          money: state.money - state.shipLevelCost,
+          shipLevel: state.shipLevel + 1,
+          shipLevelCost: Math.floor(state.shipLevelCost * UPGRADE_COST_MULTIPLIER),
         };
       }
     case 'UPGRADE_INTEREST': {
@@ -763,10 +763,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // Left Drone (Laser)
-      if (state.gunLevel >= 4) {
+      if (state.shipLevel >= 4) {
         if (leftDroneState === 'firing' && potentialLeftTarget) {
             leftDroneTargetId = potentialLeftTarget.id;
-            const leftDroneUpgrades = state.gunLevel >= 10 ? 2 : state.gunLevel >= 7 ? 1 : 0;
+            const leftDroneUpgrades = state.shipLevel >= 10 ? 2 : state.shipLevel >= 7 ? 1 : 0;
             const laserDamage = (BASE_BEAM_DAMAGE_PER_TICK + (leftDroneUpgrades * BEAM_DAMAGE_INCREASE_PER_LEVEL)) * state.bulletPowerLevel;
             handleBeamDamage(leftDroneTargetId, laserDamage);
         } else {
@@ -775,10 +775,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // Right Drone (Electricity)
-      if (state.gunLevel >= 5) {
+      if (state.shipLevel >= 5) {
         if (rightDroneState === 'firing' && potentialRightTarget) {
             rightDroneTargetId = potentialRightTarget.id;
-            const rightDroneUpgrades = state.gunLevel >= 11 ? 2 : state.gunLevel >= 8 ? 1 : 0;
+            const rightDroneUpgrades = state.shipLevel >= 11 ? 2 : state.shipLevel >= 8 ? 1 : 0;
             const electricityDamage = (BASE_BEAM_DAMAGE_PER_TICK + (rightDroneUpgrades * BEAM_DAMAGE_INCREASE_PER_LEVEL)) * state.bulletPowerLevel;
             handleBeamDamage(rightDroneTargetId, electricityDamage);
         } else {
@@ -829,13 +829,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             power: bulletPower, type: ProjectileType.Standard, angle: -Math.PI / 2,
         });
         
-        if (state.gunLevel === 1) {
+        if (state.shipLevel === 1) {
             projectiles.push(createProjectile(centerX, projectileY, 0));
-        } else if (state.gunLevel === 2) {
+        } else if (state.shipLevel === 2) {
             const spread = PLAYER_WIDTH / 3;
             projectiles.push(createProjectile(centerX - spread, projectileY, 1));
             projectiles.push(createProjectile(centerX + spread, projectileY, 2));
-        } else if (state.gunLevel >= 3) {
+        } else if (state.shipLevel >= 3) {
             const spread = PLAYER_WIDTH / 2.5;
             projectiles.push(createProjectile(centerX, projectileY, 3));
             projectiles.push(createProjectile(centerX - spread, projectileY, 4));
@@ -844,10 +844,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       }
 
       // Spawn homing missiles
-      if (state.gunLevel >= 6) {
+      if (state.shipLevel >= 6) {
         let numMissiles = 1;
-        if (state.gunLevel >= 9) numMissiles = 2;
-        if (state.gunLevel >= 12) numMissiles = 3;
+        if (state.shipLevel >= 9) numMissiles = 2;
+        if (state.shipLevel >= 12) numMissiles = 3;
 
         const baseMissileFireRate = currentFireRate * 3;
         const missileFireInterval = baseMissileFireRate / numMissiles;
@@ -953,7 +953,7 @@ const App: React.FC = () => {
   const resetGame = () => dispatch({ type: 'RESET_GAME' });
   const upgradeBulletRate = () => dispatch({ type: 'UPGRADE_BULLET_RATE' });
   const upgradeBulletPower = () => dispatch({ type: 'UPGRADE_BULLET_POWER' });
-  const upgradeGunLevel = () => dispatch({ type: 'UPGRADE_GUN_LEVEL' });
+  const upgradeShipLevel = () => dispatch({ type: 'UPGRADE_SHIP_LEVEL' });
   const upgradeInterest = () => dispatch({ type: 'UPGRADE_INTEREST' });
   const upgradeShield = () => dispatch({ type: 'UPGRADE_SHIELD' });
 
@@ -1026,21 +1026,21 @@ const App: React.FC = () => {
             </div>
 
             {/* Drones */}
-            {state.gunLevel >= 4 && (
+            {state.shipLevel >= 4 && (
               <div className="absolute" style={{ left: state.leftDrone.x, top: state.leftDrone.y }}>
                 <div style={{ transform: `scale(${sideDroneScale})`, transformOrigin: 'top left' }}>
                   <PlayerShip />
                 </div>
               </div>
             )}
-            {state.gunLevel >= 5 && (
+            {state.shipLevel >= 5 && (
               <div className="absolute" style={{ left: state.rightDrone.x, top: state.rightDrone.y }}>
                 <div style={{ transform: `scale(${sideDroneScale})`, transformOrigin: 'top left' }}>
                   <PlayerShip />
                 </div>
               </div>
             )}
-            {state.gunLevel >= 6 && (
+            {state.shipLevel >= 6 && (
                 <div className="absolute" style={{ left: state.homingDrone.x, top: state.homingDrone.y }}>
                     <HomingDroneShape />
                 </div>
@@ -1108,14 +1108,14 @@ const App: React.FC = () => {
                     <span>Lvl {state.bulletPowerLevel}</span>
                     <span className="text-yellow-400">${state.bulletPowerCost}</span>
                 </button>
-                <button onClick={upgradeGunLevel} disabled={state.money < state.gunLevelCost || state.gunLevel >= MAX_GUN_LEVEL} className={inGameUpgradeButtonClasses}>
-                    <GunLevelIcon />
-                    <span className="font-bold">GUNS</span>
-                    <span>Lvl {state.gunLevel}</span>
-                    {state.gunLevel >= MAX_GUN_LEVEL ? (
+                <button onClick={upgradeShipLevel} disabled={state.money < state.shipLevelCost || state.shipLevel >= MAX_SHIP_LEVEL} className={inGameUpgradeButtonClasses}>
+                    <ShipLevelIcon />
+                    <span className="font-bold">SHIP</span>
+                    <span>Lvl {state.shipLevel}</span>
+                    {state.shipLevel >= MAX_SHIP_LEVEL ? (
                         <span className="text-green-400">MAX</span>
                     ) : (
-                        <span className="text-yellow-400">${state.gunLevelCost}</span>
+                        <span className="text-yellow-400">${state.shipLevelCost}</span>
                     )}
                 </button>
                 <button onClick={upgradeInterest} disabled={state.money < state.interestCost} className={inGameUpgradeButtonClasses}>
@@ -1165,8 +1165,8 @@ const App: React.FC = () => {
                   <button onClick={upgradeBulletPower} disabled={state.money < state.bulletPowerCost} className={gameOverUpgradeButtonClasses}>
                       Bullet Power Lvl {state.bulletPowerLevel + 1} (${state.bulletPowerCost})
                   </button>
-                  <button onClick={upgradeGunLevel} disabled={state.money < state.gunLevelCost || state.gunLevel >= MAX_GUN_LEVEL} className={gameOverUpgradeButtonClasses}>
-                    {state.gunLevel >= MAX_GUN_LEVEL ? 'Gun Level MAX' : `Gun Level ${state.gunLevel + 1} ($${state.gunLevelCost})`}
+                  <button onClick={upgradeShipLevel} disabled={state.money < state.shipLevelCost || state.shipLevel >= MAX_SHIP_LEVEL} className={gameOverUpgradeButtonClasses}>
+                    {state.shipLevel >= MAX_SHIP_LEVEL ? 'Ship Level MAX' : `Ship Level ${state.shipLevel + 1} ($${state.shipLevelCost})`}
                   </button>
                   <button onClick={upgradeInterest} disabled={state.money < state.interestCost} className={gameOverUpgradeButtonClasses}>
                       Interest Lvl {state.interestLevel + 1} (${state.interestCost})
