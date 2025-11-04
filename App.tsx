@@ -1141,6 +1141,7 @@ const App: React.FC = () => {
               <div className="text-center">
                 <h1 className="text-6xl font-bold text-cyan-400 filter drop-shadow-[0_0_8px_#0ff]">ARES</h1>
                 <p className="text-2xl mt-2 text-cyan-300">A Really Easy Shooter</p>
+                <p className="text-lg mt-1 text-cyan-400/80">by Chris Franklyn</p>
               </div>
               <button onClick={startGame} className="text-2xl px-6 py-3 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_10px_#0ff]">
                 START GAME
