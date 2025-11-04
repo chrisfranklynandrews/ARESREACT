@@ -1195,10 +1195,6 @@ const App: React.FC = () => {
             </div>
             <div className="absolute top-4 right-4 text-right">
                 <div className="text-2xl font-bold">${state.money}</div>
-                <div className="text-lg mt-1">Rate Lvl: {state.bulletRateLevel}</div>
-                <div className="text-lg">Power Lvl: {state.bulletPowerLevel}</div>
-                <div className="text-lg">Gun Lvl: {state.gunLevel}</div>
-                <div className="text-lg">Interest Lvl: {state.interestLevel}</div>
             </div>
           </>
         )}
