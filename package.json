@@ -1,12 +1,14 @@
 {
   "name": "ares",
+  "homepage": ".",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:itch": "vite build && powershell Compress-Archive -Path dist/* -DestinationPath ares-game.zip -Force"
   },
   "dependencies": {
     "react": "^19.2.0",
