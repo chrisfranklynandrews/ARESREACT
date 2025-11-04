@@ -71,10 +71,10 @@ export const INITIAL_BULLET_POWER_COST = 70;
 
 export const INITIAL_INTEREST_COST = 100;
 export const INITIAL_SHIELD_COST = 150;
-export const INITIAL_GUN_LEVEL_COST = 200;
+export const INITIAL_SHIP_LEVEL_COST = 200;
 
 export const UPGRADE_COST_MULTIPLIER = 1.5;
-export const MAX_GUN_LEVEL = 12;
+export const MAX_SHIP_LEVEL = 12;
 
 // Drone Beam Upgrades
 export const BASE_BEAM_DAMAGE_PER_TICK = 0.05; // Base damage per frame
