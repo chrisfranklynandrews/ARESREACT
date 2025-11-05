@@ -11,6 +11,7 @@ export enum EnemyType {
   Turret,
   Splitter,
   Splinter,
+  Boss,
 }
 
 export enum ProjectileType {
@@ -31,6 +32,7 @@ export interface Player extends PositionedObject {}
 export interface Enemy extends PositionedObject {
   id: number;
   hp: number;
+  maxHp?: number; // For bosses
   value: number;
   color: string;
   type: EnemyType;
@@ -42,14 +44,17 @@ export interface Enemy extends PositionedObject {
   initialX?: number;
   swoopDirection?: 1 | -1;
 
-  // Dasher & Turret-specific
-  phase?: 'descending' | 'pausing' | 'dashing' | 'active';
+  // Dasher & Turret & Boss-specific
+  phase?: 'descending' | 'pausing' | 'dashing' | 'active' | 'entering' | 'phase1' | 'phase2' | 'dying';
   dashTargetX?: number;
   pauseTime?: number;
 
-  // Turret-specific
+  // Turret & Boss-specific
   lastFired?: number;
   horizontalDirection?: 1 | -1;
+  attackCooldown?: number;
+  attackTimer?: number;
+  attackPhase?: number;
 
   // Splinter-specific
   vx?: number;
@@ -66,6 +71,8 @@ export interface Projectile extends PositionedObject {
 
 export interface EnemyProjectile extends PositionedObject {
   id: number;
+  vx?: number;
+  vy?: number;
 }
 
 export interface Star {

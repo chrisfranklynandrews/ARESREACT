@@ -72,6 +72,17 @@ import {
   SPLINTER_HEIGHT,
   SPLINTER_DRAG,
   SPLINTER_GRAVITY,
+  KILLS_PER_WAVE,
+  WAVE_FOR_BOSS,
+  BOSS_WARNING_DURATION,
+  BOSS_WIDTH,
+  BOSS_HEIGHT,
+  BOSS_BASE_HP,
+  BOSS_VALUE,
+  BOSS_ENTER_Y,
+  BOSS_HORIZONTAL_SPEED,
+  BOSS_DEFEATED_DURATION,
+  BOSS_HP_PER_LOOP,
 } from './constants';
 
 // --- VISUAL COMPONENTS ---
@@ -136,6 +147,16 @@ const SplinterEnemyShip: React.FC<{ color: string; style: React.CSSProperties }>
     </svg>
 ));
 
+const BossShip: React.FC<{ color: string; style: React.CSSProperties }> = React.memo(({ color, style }) => (
+    <svg width={BOSS_WIDTH} height={BOSS_HEIGHT} viewBox="0 0 150 100" style={style}>
+      <polygon points="75,10 140,40 120,95 30,95 10,40" stroke={color} strokeWidth="6" fill="none" strokeLinejoin="round" />
+      <polygon points="75,25 110,45 95,80 55,80 40,45" stroke={color} strokeWidth="4" fill="none" strokeLinejoin="round" />
+      <circle cx="75" cy="55" r="12" fill={color} />
+      <line x1="15" y1="60" x2="135" y2="60" stroke={color} strokeWidth="4" />
+    </svg>
+));
+  
+
 const EnemyShip: React.FC<{ enemy: Enemy }> = React.memo(({ enemy }) => {
   const style = createDropShadowStyle(enemy.color);
   switch(enemy.type) {
@@ -149,6 +170,8 @@ const EnemyShip: React.FC<{ enemy: Enemy }> = React.memo(({ enemy }) => {
         return <SplitterEnemyShip color={enemy.color} style={style} />;
     case EnemyType.Splinter:
         return <SplinterEnemyShip color={enemy.color} style={style} />;
+    case EnemyType.Boss:
+        return <BossShip color={enemy.color} style={style} />;
     case EnemyType.Standard:
     default:
       return <StandardEnemyShip color={enemy.color} style={style} />;
@@ -263,10 +286,25 @@ const LaserBeam: React.FC<{ from: { x: number; y: number }; to: { x: number; y: 
     );
   };
 
+const BossHealthBar: React.FC<{ boss: Enemy }> = ({ boss }) => {
+    const healthPercentage = (boss.hp / (boss.maxHp ?? boss.hp)) * 100;
+    return (
+      <div className="absolute top-10 left-1/2 -translate-x-1/2 w-4/5 h-6 bg-black/50 border-2 border-red-500 rounded-md p-1 z-20">
+        <div
+          className="h-full bg-red-500 rounded-sm transition-all duration-200"
+          style={{ width: `${healthPercentage}%`, boxShadow: '0 0 8px #f00' }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center text-white font-bold text-sm tracking-widest">
+            BOSS
+        </div>
+      </div>
+    );
+  };
+
 // --- UPGRADE ICONS ---
 
 const BulletRateIcon: React.FC = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 11-3-3-3 3"/><path d="m15 17-3-3-3 3"/><path d="M12 20V4"/></svg>
+    <svg xmlns="http://www.w.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 11-3-3-3 3"/><path d="m15 17-3-3-3 3"/><path d="M12 20V4"/></svg>
 );
 
 const BulletPowerIcon: React.FC = () => (
@@ -313,6 +351,10 @@ type GameState = {
   rightDroneState: 'firing' | 'cooldown';
   leftDroneStateTime: number;
   rightDroneStateTime: number;
+  wave: number;
+  bossState: 'none' | 'warning' | 'fighting' | 'defeated';
+  bossWarningTime: number;
+  bossDefeatedTime: number;
 
   // Persistent state
   money: number;
@@ -385,6 +427,10 @@ const createInitialRunState = () => {
     rightDroneState: 'firing' as const,
     leftDroneStateTime: 0,
     rightDroneStateTime: 0,
+    wave: 1,
+    bossState: 'none' as const,
+    bossWarningTime: 0,
+    bossDefeatedTime: 0,
   };
 };
 
@@ -445,20 +491,31 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const now = Date.now();
       const interestRate = (state.interestLevel) * 0.01;
       const earnedInterest = Math.round(state.money * interestRate);
-      const newMoney = state.money + earnedInterest;
 
-      return { 
-        ...state, 
+      const persistentState = {
+        stars: state.stars,
+        money: state.money + earnedInterest,
+        bulletRateLevel: state.bulletRateLevel,
+        bulletPowerLevel: state.bulletPowerLevel,
+        shipLevel: state.shipLevel,
+        interestLevel: state.interestLevel,
+        shieldLevel: state.shieldLevel,
+        bulletRateCost: state.bulletRateCost,
+        bulletPowerCost: state.bulletPowerCost,
+        shipLevelCost: state.shipLevelCost,
+        interestCost: state.interestCost,
+        shieldCost: state.shieldCost,
+      };
+
+      return {
+        ...persistentState,
         ...createInitialRunState(),
-        money: newMoney,
         status: GameStatus.Playing,
+        gameStartTime: now,
         lastEnemySpawn: now,
         lastProjectileSpawn: now,
         lastMissileSpawn: now,
-        gameStartTime: now,
         shields: state.shieldLevel,
-        leftDroneState: 'firing',
-        rightDroneState: 'firing',
         leftDroneStateTime: now,
         rightDroneStateTime: now,
       };
@@ -514,13 +571,32 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (state.status !== GameStatus.Playing) return state;
 
       const now = Date.now();
-      let { player, enemies, projectiles, enemyProjectiles, stars, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime } = { ...state };
+      let { player, enemies, projectiles, enemyProjectiles, stars, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime, wave, bossState, bossWarningTime, bossDefeatedTime } = { ...state };
       let playerHitTime = state.playerHitTime;
+      const newFloatingTexts: FloatingText[] = [];
+
+      // --- BOSS STATE MACHINE ---
+      if (bossState === 'warning' && now - bossWarningTime > BOSS_WARNING_DURATION) {
+        bossState = 'fighting';
+        const loopCount = Math.floor((wave - 1) / WAVE_FOR_BOSS);
+        const bossHp = BOSS_BASE_HP + (loopCount * BOSS_HP_PER_LOOP);
+        enemies.push({
+            id: now, x: GAME_WIDTH / 2 - BOSS_WIDTH / 2, y: -BOSS_HEIGHT,
+            width: BOSS_WIDTH, height: BOSS_HEIGHT, hp: bossHp, maxHp: bossHp,
+            value: BOSS_VALUE, color: '#ff0055', type: EnemyType.Boss,
+            phase: 'entering', horizontalDirection: 1, attackTimer: 0, attackPhase: 0,
+        });
+      }
+      if (bossState === 'defeated' && now - bossDefeatedTime > BOSS_DEFEATED_DURATION) {
+        bossState = 'none';
+        wave += 1;
+      }
 
       if (playerHitTime > 0 && now - playerHitTime > PLAYER_HIT_EFFECT_DURATION) {
         playerHitTime = 0;
       }
 
+      // --- PLAYER & DRONE MOVEMENT ---
       let playerTargetX: number;
       const activeEnemies = enemies.filter(e => !e.isClearing && e.hp > 0);
       if (activeEnemies.length > 0) {
@@ -529,9 +605,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       } else {
         playerTargetX = GAME_WIDTH / 2 - player.width / 2;
       }
-      
-      const dx = playerTargetX - player.x;
-      player.x += dx * PLAYER_SMOOTHING_FACTOR;
+      player.x += (playerTargetX - player.x) * PLAYER_SMOOTHING_FACTOR;
       player.x = Math.max(0, Math.min(GAME_WIDTH - player.width, player.x));
       
       const DRONE_SMOOTHING_FACTOR = 0.2;
@@ -540,388 +614,303 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const sideDroneHeight = PLAYER_HEIGHT * sideDroneScale;
       const side_x_spacing = 10;
       const targetSideDroneY = player.y + (PLAYER_HEIGHT / 2) - (sideDroneHeight / 2);
-      
       const homingDroneSize = PLAYER_WIDTH * HOMING_DRONE_SCALE;
       const homing_y_spacing = 15;
       const targetHomingDroneX = player.x + PLAYER_WIDTH / 2 - homingDroneSize / 2;
       const targetHomingDroneY = player.y + PLAYER_HEIGHT + homing_y_spacing;
-
-      const targetLeftDroneX = player.x - sideDroneWidth - side_x_spacing;
-      leftDrone.x += (targetLeftDroneX - leftDrone.x) * DRONE_SMOOTHING_FACTOR;
+      leftDrone.x += (player.x - sideDroneWidth - side_x_spacing - leftDrone.x) * DRONE_SMOOTHING_FACTOR;
       leftDrone.y += (targetSideDroneY - leftDrone.y) * DRONE_SMOOTHING_FACTOR;
-
-      const targetRightDroneX = player.x + PLAYER_WIDTH + side_x_spacing;
-      rightDrone.x += (targetRightDroneX - rightDrone.x) * DRONE_SMOOTHING_FACTOR;
+      rightDrone.x += (player.x + PLAYER_WIDTH + side_x_spacing - rightDrone.x) * DRONE_SMOOTHING_FACTOR;
       rightDrone.y += (targetSideDroneY - rightDrone.y) * DRONE_SMOOTHING_FACTOR;
-
       homingDrone.x += (targetHomingDroneX - homingDrone.x) * DRONE_SMOOTHING_FACTOR;
       homingDrone.y += (targetHomingDroneY - homingDrone.y) * DRONE_SMOOTHING_FACTOR;
 
+      // --- STAR MOVEMENT ---
       stars = stars.map(star => {
         const newY = star.y + star.speed;
-        if (newY > GAME_HEIGHT) {
-          return { ...star, y: 0, x: Math.random() * GAME_WIDTH };
-        }
-        return { ...star, y: newY };
+        return newY > GAME_HEIGHT ? { ...star, y: 0, x: Math.random() * GAME_WIDTH } : { ...star, y: newY };
       });
 
+      // --- PROJECTILE MOVEMENT ---
       projectiles = projectiles.map(p => {
         if (p.type === ProjectileType.Homing) {
-            let target: Enemy | undefined = undefined;
-            if (p.targetId) {
-                target = enemies.find(e => e.id === p.targetId && e.hp > 0 && !e.isClearing);
-            }
-            if (!target && activeEnemies.length > 0) {
-                target = activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest));
-            }
-
+            let target = activeEnemies.find(e => e.id === p.targetId);
+            if (!target) target = activeEnemies.length > 0 ? activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)) : undefined;
             let newAngle = p.angle ?? -Math.PI / 2;
             if (target) {
                 const targetAngle = Math.atan2(target.y + target.height / 2 - p.y, target.x + target.width / 2 - p.x);
                 let angleDiff = targetAngle - newAngle;
                 while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
                 while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-
-                const turnAmount = Math.min(HOMING_MISSILE_TURN_RATE, Math.abs(angleDiff));
-                newAngle += turnAmount * Math.sign(angleDiff);
+                newAngle += Math.min(HOMING_MISSILE_TURN_RATE, Math.abs(angleDiff)) * Math.sign(angleDiff);
             }
-            const vx = Math.cos(newAngle) * HOMING_MISSILE_SPEED;
-            const vy = Math.sin(newAngle) * HOMING_MISSILE_SPEED;
-            return { ...p, x: p.x + vx, y: p.y + vy, angle: newAngle, targetId: target ? target.id : undefined };
+            return { ...p, x: p.x + Math.cos(newAngle) * HOMING_MISSILE_SPEED, y: p.y + Math.sin(newAngle) * HOMING_MISSILE_SPEED, angle: newAngle, targetId: target?.id };
         }
-        
-        const angle = p.angle ?? -Math.PI / 2;
-        const vx = Math.cos(angle) * PROJECTILE_SPEED;
-        const vy = Math.sin(angle) * PROJECTILE_SPEED;
-        return { ...p, x: p.x + vx, y: p.y + vy };
+        return { ...p, x: p.x + Math.cos(p.angle ?? 0) * PROJECTILE_SPEED, y: p.y + Math.sin(p.angle ?? -Math.PI / 2) * PROJECTILE_SPEED };
       }).filter(p => p.y + p.height > 0 && p.y < GAME_HEIGHT && p.x + p.width > 0 && p.x < GAME_WIDTH);
       
+      // --- ENEMY MOVEMENT & ATTACKS ---
       const newEnemyProjectiles: EnemyProjectile[] = [];
-      enemies = enemies.map((e) => {
-        if (e.isClearing) {
-            return { ...e, y: e.y - ENEMY_SPEED * 2.5, recoil: undefined };
+      enemies = enemies.map((enemy) => {
+        if (enemy.isClearing) {
+          return { ...enemy, y: enemy.y - ENEMY_SPEED * 2.5, recoil: undefined };
         }
-        let newX = e.x; let newY = e.y; let newPhase = e.phase; let newRecoil = e.recoil;
-        if (newRecoil && newRecoil > 0) { newY -= newRecoil; newRecoil *= 0.9; if (newRecoil < 0.5) newRecoil = undefined; }
-        if (e.hp > 0) {
-            switch (e.type) {
-                case EnemyType.Swooper: {
-                    newY += ENEMY_SPEED; let newSwoopDirection = e.swoopDirection ?? 1; let newInitialX = e.initialX ?? e.x;
-                    const xOffset = Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE; let proposedX = newInitialX + (xOffset * newSwoopDirection);
-                    const wallRightX = GAME_WIDTH - e.width; const isMovingRightward = (Math.cos(newY * SWOOPER_FREQUENCY) * newSwoopDirection) > 0;
-                    if (proposedX < 0 && !isMovingRightward) { newSwoopDirection *= -1; newInitialX = -newInitialX; } else if (proposedX > wallRightX && isMovingRightward) { newSwoopDirection *= -1; newInitialX = 2 * wallRightX - newInitialX; }
-                    newX = newInitialX + (Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE * newSwoopDirection); newX = Math.max(0, Math.min(wallRightX, newX));
-                    return { ...e, x: newX, y: newY, initialX: newInitialX, swoopDirection: newSwoopDirection, recoil: newRecoil };
-                }
-                case EnemyType.Dasher:
-                    if (e.phase === 'descending') { newY += ENEMY_SPEED * 1.5; if (newY >= DASHER_PAUSE_Y) { newY = DASHER_PAUSE_Y; return { ...e, y: newY, phase: 'pausing', pauseTime: now, dashTargetX: player.x, recoil: newRecoil }; }
-                    } else if (e.phase === 'pausing') { if (now - (e.pauseTime ?? 0) > DASHER_PAUSE_DURATION) { newPhase = 'dashing'; }
-                    } else if (e.phase === 'dashing') { const targetX = e.dashTargetX ?? player.x; const dx = targetX - e.x; const moveX = Math.sign(dx) * Math.min(Math.abs(dx), DASHER_DASH_SPEED * 0.75); newX += moveX; newY += DASHER_DASH_SPEED; }
-                    break;
-                case EnemyType.Turret:
-                    if (e.phase === 'descending') {
-                        newY += ENEMY_SPEED / 2;
-                        if (newY >= TURRET_STOP_Y) {
-                            return { ...e, y: TURRET_STOP_Y, phase: 'active', lastFired: now };
-                        }
-                    } else if (e.phase === 'active') {
-                        let newDir = e.horizontalDirection ?? 1;
-                        newX += TURRET_HORIZONTAL_SPEED * newDir;
-                        if (newX <= 0 || newX >= GAME_WIDTH - e.width) {
-                            newDir *= -1;
-                        }
-                        if (now - (e.lastFired ?? 0) > TURRET_FIRE_RATE) {
-                            e.lastFired = now;
-                            newEnemyProjectiles.push({
-                                id: now + Math.random(),
-                                x: e.x + e.width / 2 - ENEMY_PROJECTILE_WIDTH / 2,
-                                y: e.y + e.height,
-                                width: ENEMY_PROJECTILE_WIDTH,
-                                height: ENEMY_PROJECTILE_HEIGHT,
-                            });
-                        }
-                        return { ...e, x: newX, y: newY, horizontalDirection: newDir, recoil: newRecoil };
-                    }
-                    break;
-                 case EnemyType.Splinter: {
-                    const newVx = (e.vx ?? 0) * SPLINTER_DRAG;
-                    const newVy = (e.vy ?? 0) + SPLINTER_GRAVITY;
-                    newX += newVx;
-                    newY += newVy;
-                    return { ...e, x: newX, y: newY, recoil: newRecoil, vx: newVx, vy: newVy };
-                 }
-                case EnemyType.Splitter:
-                case EnemyType.Standard: 
-                default: 
-                    newY += ENEMY_SPEED; 
-                    break;
-            }
+        if (enemy.hp <= 0) {
+          return enemy; // Don't move dead or dying enemies.
         }
-        return { ...e, x: newX, y: newY, phase: newPhase, recoil: newRecoil };
-      });
       
+        // Apply recoil and create a base state for this tick's modifications
+        let recoil = enemy.recoil;
+        let y = enemy.y;
+        if (recoil) {
+          y -= recoil;
+          recoil *= 0.9;
+          if (recoil < 0.5) recoil = undefined;
+        }
+        const enemyTickState: Enemy = { ...enemy, y, recoil };
+      
+        switch (enemyTickState.type) {
+          case EnemyType.Swooper: {
+            const newY = enemyTickState.y + ENEMY_SPEED;
+            const newX = (enemyTickState.initialX ?? enemyTickState.x) + Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE * (enemyTickState.swoopDirection ?? 1);
+            return { ...enemyTickState, x: newX, y: newY };
+          }
+          case EnemyType.Dasher: {
+            let { x, y, phase, pauseTime, dashTargetX } = enemyTickState;
+            if (phase === 'descending') {
+              y += ENEMY_SPEED;
+              if (y >= DASHER_PAUSE_Y) { y = DASHER_PAUSE_Y; phase = 'pausing'; pauseTime = now; }
+            } else if (phase === 'pausing') {
+              if (now - (pauseTime ?? 0) > DASHER_PAUSE_DURATION) { phase = 'dashing'; dashTargetX = player.x; }
+            } else if (phase === 'dashing') {
+              const angle = Math.atan2(GAME_HEIGHT - y, (dashTargetX ?? x) - x);
+              x += Math.cos(angle) * DASHER_DASH_SPEED;
+              y += Math.sin(angle) * DASHER_DASH_SPEED;
+            }
+            return { ...enemyTickState, x, y, phase, pauseTime, dashTargetX };
+          }
+          case EnemyType.Turret: {
+            let { x, y, phase, horizontalDirection, lastFired } = enemyTickState;
+            if (phase === 'descending') {
+              y += ENEMY_SPEED / 2;
+              if (y >= TURRET_STOP_Y) { y = TURRET_STOP_Y; phase = 'active'; lastFired = now; }
+            } else if (phase === 'active') {
+              horizontalDirection = horizontalDirection ?? 1;
+              x += TURRET_HORIZONTAL_SPEED * horizontalDirection;
+              if (x <= 0 || x >= GAME_WIDTH - enemyTickState.width) { horizontalDirection *= -1; }
+              if (now - (lastFired ?? 0) > TURRET_FIRE_RATE) {
+                lastFired = now;
+                newEnemyProjectiles.push({
+                  id: now + Math.random(), x: x + enemyTickState.width / 2 - ENEMY_PROJECTILE_WIDTH / 2, y: y + enemyTickState.height,
+                  width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED,
+                });
+              }
+            }
+            return { ...enemyTickState, x, y, phase, horizontalDirection, lastFired };
+          }
+          case EnemyType.Splinter: {
+            const vx = (enemyTickState.vx ?? 0) * SPLINTER_DRAG;
+            const vy = ((enemyTickState.vy ?? 0) * SPLINTER_DRAG) + SPLINTER_GRAVITY;
+            return { ...enemyTickState, x: enemyTickState.x + vx, y: enemyTickState.y + vy, vx, vy };
+          }
+          case EnemyType.Boss: {
+            let { x, y, phase, horizontalDirection, attackTimer, attackPhase } = enemyTickState;
+            if (phase === 'entering') {
+              y += ENEMY_SPEED / 2;
+              if (y >= BOSS_ENTER_Y) { y = BOSS_ENTER_Y; phase = 'phase1'; attackTimer = now; }
+            } else if (phase === 'phase1' || phase === 'phase2') {
+              horizontalDirection = horizontalDirection ?? 1;
+              x += BOSS_HORIZONTAL_SPEED * horizontalDirection;
+              if (x <= 0 || x >= GAME_WIDTH - enemyTickState.width) horizontalDirection *= -1;
+              if (enemyTickState.hp < (enemyTickState.maxHp ?? 0) / 2 && phase === 'phase1') phase = 'phase2';
+              
+              const cooldown = phase === 'phase2' ? 800 : 1500;
+              if (now - (attackTimer ?? 0) > cooldown) {
+                attackTimer = now;
+                attackPhase = ((attackPhase ?? 0) + 1) % 4;
+                const centerX = x + enemyTickState.width / 2;
+                if (attackPhase === 0) for (let i = -3; i <= 3; i++) newEnemyProjectiles.push({ id: now + i + Math.random(), x: centerX, y: y + enemyTickState.height - 20, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED, vy: Math.sin(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED });
+                else if (attackPhase === 1 || attackPhase === 3) for (let i = 0; i < (phase === 'phase2' ? 5 : 3); i++) { newEnemyProjectiles.push({ id: now + i * 100 + 100 + Math.random(), x: x + 20, y: y + enemyTickState.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 }); newEnemyProjectiles.push({ id: now + i * 100 + 200 + Math.random(), x: x + enemyTickState.width - 20, y: y + enemyTickState.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 }); } 
+                else { const angleToPlayer = Math.atan2(player.y - (y + enemyTickState.height), player.x - centerX); for (let i = -1; i <= 1; i++) newEnemyProjectiles.push({ id: now + 300 + i + Math.random(), x: centerX, y: y + enemyTickState.height / 2, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5, vy: Math.sin(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5 }); }
+              }
+            }
+            return { ...enemyTickState, x, y, phase, horizontalDirection, attackTimer, attackPhase };
+          }
+          default: // Standard, Splitter
+            return { ...enemyTickState, y: enemyTickState.y + ENEMY_SPEED };
+        }
+      });
       enemyProjectiles = [...enemyProjectiles, ...newEnemyProjectiles]
-        .map(p => ({ ...p, y: p.y + ENEMY_PROJECTILE_SPEED }))
-        .filter(p => p.y < GAME_HEIGHT);
+        .map(p => ({ ...p, y: p.y + (p.vy ?? ENEMY_PROJECTILE_SPEED), x: p.x + (p.vx ?? 0) }))
+        .filter(p => p.y < GAME_HEIGHT && p.y + p.height > 0 && p.x < GAME_WIDTH && p.x + p.width > 0);
 
+
+      // --- DAMAGE APPLICATION ---
       const hitProjectileIds = new Set<number>();
-      const newFloatingTexts: FloatingText[] = [];
-      const spawnedSplinters: Enemy[] = [];
       projectiles.forEach(projectile => {
           for (const enemy of enemies) {
               if (enemy.hp <= 0 || enemy.isClearing) continue;
               if (intersects(projectile, enemy)) {
                   enemy.hp -= projectile.power;
-                  enemy.recoil = (enemy.recoil || 0) + ENEMY_RECOIL_AMOUNT;
+                  enemy.recoil = (enemy.recoil || 0) + ENEMY_RECOIL_AMOUNT * (enemy.type === EnemyType.Boss ? 0.1 : 1);
                   hitProjectileIds.add(projectile.id);
-                  if (enemy.hp <= 0) {
-                      enemy.deathTime = now; money += enemy.value; killCount += 1;
-                      newFloatingTexts.push({ id: now + Math.random(), x: enemy.x + enemy.width / 2, y: enemy.y, text: `+$${enemy.value}`, startTime: now });
-
-                      if (enemy.type === EnemyType.Splitter) {
-                        for (let i = 0; i < SPLINTER_COUNT; i++) {
-                            const angle = (i / SPLINTER_COUNT) * (2 * Math.PI);
-                            const initialVx = Math.cos(angle) * SPLINTER_INITIAL_SPEED;
-                            const initialVy = Math.sin(angle) * SPLINTER_INITIAL_SPEED;
-                            
-                            spawnedSplinters.push({
-                                id: now + Math.random() + i,
-                                x: enemy.x + enemy.width / 2 - SPLINTER_WIDTH / 2,
-                                y: enemy.y + enemy.height / 2 - SPLINTER_HEIGHT / 2,
-                                width: SPLINTER_WIDTH,
-                                height: SPLINTER_HEIGHT,
-                                hp: SPLINTER_HP,
-                                value: SPLINTER_VALUE,
-                                color: ENEMY_COLORS[1], // Red
-                                type: EnemyType.Splinter,
-                                vx: initialVx,
-                                vy: initialVy,
-                            });
-                        }
-                      }
-                  }
                   break;
               }
           }
       });
       projectiles = projectiles.filter(p => !hitProjectileIds.has(p.id));
 
-      if (spawnedSplinters.length > 0) {
-          enemies = [...enemies, ...spawnedSplinters];
-      }
-      
-      // Drone Beam Logic
       const handleBeamDamage = (targetId: number | null, damage: number) => {
         if (targetId === null) return;
         const target = enemies.find(e => e.id === targetId);
         if (target && target.hp > 0 && !target.isClearing) {
             target.hp -= damage;
-            if (target.hp <= 0) {
-                target.deathTime = now; money += target.value; killCount += 1;
-                newFloatingTexts.push({ id: now + Math.random(), x: target.x + target.width / 2, y: target.y, text: `+$${target.value}`, startTime: now });
-            }
         }
       };
 
-      // Drone Cooldown State Management
-      if (leftDroneState === 'firing' && now - leftDroneStateTime > BEAM_FIRING_DURATION) {
-        leftDroneState = 'cooldown';
-        leftDroneStateTime = now;
-      } else if (leftDroneState === 'cooldown' && now - leftDroneStateTime > BEAM_COOLDOWN_DURATION) {
-        leftDroneState = 'firing';
-        leftDroneStateTime = now;
-      }
-      
-      if (rightDroneState === 'firing' && now - rightDroneStateTime > BEAM_FIRING_DURATION) {
-        rightDroneState = 'cooldown';
-        rightDroneStateTime = now;
-      } else if (rightDroneState === 'cooldown' && now - rightDroneStateTime > BEAM_COOLDOWN_DURATION) {
-        rightDroneState = 'firing';
-        rightDroneStateTime = now;
-      }
+      if (leftDroneState === 'firing' && now - leftDroneStateTime > BEAM_FIRING_DURATION) { leftDroneState = 'cooldown'; leftDroneStateTime = now; } 
+      else if (leftDroneState === 'cooldown' && now - leftDroneStateTime > BEAM_COOLDOWN_DURATION) { leftDroneState = 'firing'; leftDroneStateTime = now; }
+      if (rightDroneState === 'firing' && now - rightDroneStateTime > BEAM_FIRING_DURATION) { rightDroneState = 'cooldown'; rightDroneStateTime = now; } 
+      else if (rightDroneState === 'cooldown' && now - rightDroneStateTime > BEAM_COOLDOWN_DURATION) { rightDroneState = 'firing'; rightDroneStateTime = now; }
 
-      // Drone Targeting Logic
-      let potentialLeftTarget: Enemy | undefined = undefined;
-      let potentialRightTarget: Enemy | undefined = undefined;
-      
+      let potentialLeftTarget: Enemy | undefined, potentialRightTarget: Enemy | undefined;
       if (activeEnemies.length > 0) {
           potentialLeftTarget = activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest));
-      
-          const enemiesSortedByDistance = [...activeEnemies].sort((a, b) => {
-              const distA = Math.hypot(a.x - player.x, a.y - player.y);
-              const distB = Math.hypot(b.x - player.x, b.y - player.y);
-              return distA - distB;
-          });
-      
-          if (enemiesSortedByDistance[0].id !== potentialLeftTarget.id) {
-              potentialRightTarget = enemiesSortedByDistance[0];
-          } else if (enemiesSortedByDistance.length > 1) {
-              potentialRightTarget = enemiesSortedByDistance[1];
-          } else {
-              potentialRightTarget = enemiesSortedByDistance[0];
-          }
+          const enemiesSorted = [...activeEnemies].sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
+          potentialRightTarget = enemiesSorted[0].id !== potentialLeftTarget.id ? enemiesSorted[0] : enemiesSorted[1] ?? enemiesSorted[0];
       }
 
-      // Left Drone (Laser)
       if (state.shipLevel >= 4) {
-        if (leftDroneState === 'firing' && potentialLeftTarget) {
-            leftDroneTargetId = potentialLeftTarget.id;
-            const leftDroneUpgrades = state.shipLevel >= 10 ? 2 : state.shipLevel >= 7 ? 1 : 0;
-            const laserDamage = (BASE_BEAM_DAMAGE_PER_TICK + (leftDroneUpgrades * BEAM_DAMAGE_INCREASE_PER_LEVEL)) * state.bulletPowerLevel;
-            handleBeamDamage(leftDroneTargetId, laserDamage);
-        } else {
-            leftDroneTargetId = null;
+        leftDroneTargetId = leftDroneState === 'firing' && potentialLeftTarget ? potentialLeftTarget.id : null;
+        if (leftDroneTargetId) {
+            const damage = (BASE_BEAM_DAMAGE_PER_TICK + ((state.shipLevel >= 10 ? 2 : state.shipLevel >= 7 ? 1 : 0) * BEAM_DAMAGE_INCREASE_PER_LEVEL)) * state.bulletPowerLevel;
+            handleBeamDamage(leftDroneTargetId, damage);
         }
       }
-
-      // Right Drone (Electricity)
       if (state.shipLevel >= 5) {
-        if (rightDroneState === 'firing' && potentialRightTarget) {
-            rightDroneTargetId = potentialRightTarget.id;
-            const rightDroneUpgrades = state.shipLevel >= 11 ? 2 : state.shipLevel >= 8 ? 1 : 0;
-            const electricityDamage = (BASE_BEAM_DAMAGE_PER_TICK + (rightDroneUpgrades * BEAM_DAMAGE_INCREASE_PER_LEVEL)) * state.bulletPowerLevel;
-            handleBeamDamage(rightDroneTargetId, electricityDamage);
-        } else {
-            rightDroneTargetId = null;
+        rightDroneTargetId = rightDroneState === 'firing' && potentialRightTarget ? potentialRightTarget.id : null;
+        if (rightDroneTargetId) {
+            const damage = (BASE_BEAM_DAMAGE_PER_TICK + ((state.shipLevel >= 11 ? 2 : state.shipLevel >= 8 ? 1 : 0) * BEAM_DAMAGE_INCREASE_PER_LEVEL)) * state.bulletPowerLevel;
+            handleBeamDamage(rightDroneTargetId, damage);
         }
       }
 
+      // --- UNIFIED DEATH PROCESSING ---
+      const spawnedSplinters: Enemy[] = [];
+      enemies.forEach(enemy => {
+        if (enemy.hp <= 0 && !enemy.deathTime) {
+            enemy.deathTime = now;
+            money += enemy.value;
+            newFloatingTexts.push({ id: now + Math.random(), x: enemy.x + enemy.width / 2, y: enemy.y, text: `+$${enemy.value}`, startTime: now });
+
+            if (enemy.type === EnemyType.Boss) {
+                bossState = 'defeated';
+                bossDefeatedTime = now;
+                enemyProjectiles = []; // Clear boss projectiles on death
+            } else {
+                if (enemy.type !== EnemyType.Splinter) {
+                    killCount += 1;
+                    const waveKillGoal = wave * KILLS_PER_WAVE;
+                    if (killCount >= waveKillGoal && bossState === 'none') {
+                        if (wave % WAVE_FOR_BOSS === 0) {
+                            bossState = 'warning';
+                            bossWarningTime = now;
+                        } else {
+                            wave += 1;
+                        }
+                    }
+                }
+            }
+            if (enemy.type === EnemyType.Splitter) {
+                for (let i = 0; i < SPLINTER_COUNT; i++) {
+                    const angle = (i / SPLINTER_COUNT) * (2 * Math.PI);
+                    spawnedSplinters.push({
+                        id: now + Math.random() + i, x: enemy.x + enemy.width / 2 - SPLINTER_WIDTH / 2, y: enemy.y + enemy.height / 2 - SPLINTER_HEIGHT / 2,
+                        width: SPLINTER_WIDTH, height: SPLINTER_HEIGHT, hp: SPLINTER_HP, value: SPLINTER_VALUE, color: ENEMY_COLORS[1],
+                        type: EnemyType.Splinter, vx: Math.cos(angle) * SPLINTER_INITIAL_SPEED, vy: Math.sin(angle) * SPLINTER_INITIAL_SPEED,
+                    });
+                }
+            }
+        }
+      });
+
+      if (spawnedSplinters.length > 0) enemies = [...enemies, ...spawnedSplinters];
       floatingTexts = [...floatingTexts, ...newFloatingTexts];
 
+      // --- PLAYER COLLISION ---
       for (const enemy of enemies) {
         if (enemy.isClearing || enemy.hp <= 0) continue;
         if (intersects(enemy, player) || enemy.y + enemy.height > (GAME_HEIGHT - UPGRADE_BAR_HEIGHT)) {
-          if (shields > 0) {
-            shields -= 1; playerHitTime = now;
-            enemies = enemies.map(e => ({ ...e, isClearing: true, phase: undefined }));
-            break;
-          } else {
-            return { ...state, money, shields: 0, status: GameStatus.GameOver };
-          }
+          if (shields > 0) { shields -= 1; playerHitTime = now; enemies = enemies.map(e => e.type === EnemyType.Boss ? e : ({ ...e, isClearing: true, phase: undefined })); break; } 
+          else return { ...state, money, shields: 0, status: GameStatus.GameOver };
         }
       }
-      
       for (const projectile of enemyProjectiles) {
         if (intersects(projectile, player)) {
-            projectile.y = GAME_HEIGHT + 1; // Mark for removal
-            if (shields > 0) {
-                shields -= 1;
-                playerHitTime = now;
-                enemies = enemies.map(e => ({ ...e, isClearing: true, phase: undefined }));
-            } else {
-                return { ...state, money, shields: 0, status: GameStatus.GameOver };
-            }
+            projectile.y = GAME_HEIGHT + 1;
+            if (shields > 0) { shields -= 1; playerHitTime = now; enemies = enemies.map(e => e.type === EnemyType.Boss ? e : ({ ...e, isClearing: true, phase: undefined })); } 
+            else return { ...state, money, shields: 0, status: GameStatus.GameOver };
             break; 
         }
       }
 
+      // --- PLAYER FIRING ---
       const bulletPower = BASE_BULLET_POWER + ((state.bulletPowerLevel -1) * BULLET_POWER_INCREASE_PER_LEVEL);
-      
       const currentFireRate = Math.max(MIN_PROJECTILE_FIRE_RATE, BASE_PROJECTILE_FIRE_RATE - ((state.bulletRateLevel - 1) * FIRE_RATE_DECREASE_PER_LEVEL));
       if (now - lastProjectileSpawn > currentFireRate) {
         lastProjectileSpawn = now;
-        
-        const centerX = player.x + player.width / 2;
-        const projectileY = player.y;
-
-        const createProjectile = (x: number, y: number, idOffset: number = 0): Projectile => ({
-            id: now + idOffset + Math.random(), x: x - PROJECTILE_WIDTH / 2, y: y, width: PROJECTILE_WIDTH, height: PROJECTILE_HEIGHT,
-            power: bulletPower, type: ProjectileType.Standard, angle: -Math.PI / 2,
+        const createProjectile = (x: number, y: number, angle: number): Projectile => ({
+            id: now + Math.random(), x: x - PROJECTILE_WIDTH / 2, y: y, width: PROJECTILE_WIDTH, height: PROJECTILE_HEIGHT,
+            power: bulletPower, type: ProjectileType.Standard, angle,
         });
-        
-        if (state.shipLevel === 1) {
-            projectiles.push(createProjectile(centerX, projectileY, 0));
-        } else if (state.shipLevel === 2) {
-            const spread = PLAYER_WIDTH / 3;
-            projectiles.push(createProjectile(centerX - spread, projectileY, 1));
-            projectiles.push(createProjectile(centerX + spread, projectileY, 2));
-        } else if (state.shipLevel >= 3) {
-            const spread = PLAYER_WIDTH / 2.5;
-            projectiles.push(createProjectile(centerX, projectileY, 3));
-            projectiles.push(createProjectile(centerX - spread, projectileY, 4));
-            projectiles.push(createProjectile(centerX + spread, projectileY, 5));
-        }
+        const centerX = player.x + player.width / 2;
+        if (state.shipLevel === 1) projectiles.push(createProjectile(centerX, player.y, -Math.PI / 2));
+        else if (state.shipLevel === 2) { projectiles.push(createProjectile(centerX - PLAYER_WIDTH / 3, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX + PLAYER_WIDTH / 3, player.y, -Math.PI / 2)); } 
+        else if (state.shipLevel >= 3) { projectiles.push(createProjectile(centerX, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX - PLAYER_WIDTH / 2.5, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX + PLAYER_WIDTH / 2.5, player.y, -Math.PI / 2)); }
       }
 
-      // Spawn homing missiles
+      // --- SPAWN HOMING MISSILES ---
       if (state.shipLevel >= 6) {
-        let numMissiles = 1;
-        if (state.shipLevel >= 9) numMissiles = 2;
-        if (state.shipLevel >= 12) numMissiles = 3;
-
-        const baseMissileFireRate = currentFireRate * 3;
-        const missileFireInterval = baseMissileFireRate / numMissiles;
-
-        if (now - lastMissileSpawn > missileFireInterval) {
+        const numMissiles = state.shipLevel >= 12 ? 3 : state.shipLevel >= 9 ? 2 : 1;
+        if (now - lastMissileSpawn > (currentFireRate * 3) / numMissiles && activeEnemies.length > 0) {
             lastMissileSpawn = now;
-            const target = activeEnemies.length > 0 ? activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)) : undefined;
-            if (target) {
-                const missile: Projectile = {
-                    id: now + 500 + Math.random(), x: homingDrone.x + homingDroneSize / 2 - HOMING_MISSILE_WIDTH / 2, y: homingDrone.y,
-                    width: HOMING_MISSILE_WIDTH, height: HOMING_MISSILE_HEIGHT, power: bulletPower, type: ProjectileType.Homing,
-                    targetId: target.id, angle: -Math.PI / 2,
-                };
-                projectiles.push(missile);
-            }
+            projectiles.push({
+                id: now + 500 + Math.random(), x: homingDrone.x + homingDroneSize / 2 - HOMING_MISSILE_WIDTH / 2, y: homingDrone.y,
+                width: HOMING_MISSILE_WIDTH, height: HOMING_MISSILE_HEIGHT, power: bulletPower, type: ProjectileType.Homing,
+                targetId: activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)).id, angle: -Math.PI / 2,
+            });
         }
       }
-
-      const elapsedTime = now - state.gameStartTime;
-      const difficultyProgress = Math.min(1, elapsedTime / TIME_TO_MAX_DIFFICULTY);
-      const spawnRateReduction = (INITIAL_ENEMY_SPAWN_RATE - MIN_ENEMY_SPAWN_RATE) * difficultyProgress;
-      const currentEnemySpawnRate = INITIAL_ENEMY_SPAWN_RATE - spawnRateReduction;
-
-      if (now - lastEnemySpawn > currentEnemySpawnRate) {
+      
+      // --- ENEMY SPAWNING ---
+      const difficultyProgress = Math.min(1, (now - state.gameStartTime) / TIME_TO_MAX_DIFFICULTY);
+      const currentEnemySpawnRate = INITIAL_ENEMY_SPAWN_RATE - (INITIAL_ENEMY_SPAWN_RATE - MIN_ENEMY_SPAWN_RATE) * difficultyProgress;
+      if (now - lastEnemySpawn > currentEnemySpawnRate && bossState === 'none') {
         lastEnemySpawn = now;
         const additionalHp = Math.floor(difficultyProgress * MAX_ADDITIONAL_HP);
         const hp = BASE_ENEMY_HP + additionalHp;
         const value = BASE_ENEMY_VALUE + Math.floor(difficultyProgress * MAX_ADDITIONAL_VALUE);
         const color = ENEMY_COLORS[Math.min(additionalHp, ENEMY_COLORS.length - 1)];
-        const x = Math.random() * (GAME_WIDTH - ENEMY_WIDTH);
-      
-        let type: EnemyType;
-        const random = Math.random();
-        if (difficultyProgress > 0.6 && random < 0.15) {
-            type = EnemyType.Splitter;
-        } else if (difficultyProgress > 0.4 && random < 0.40) {
-            type = EnemyType.Turret;
-        } else if (difficultyProgress > 0.5 && random < 0.65) {
-            type = EnemyType.Dasher;
-        } else if (difficultyProgress > 0.2 && random < 0.90) {
-            type = EnemyType.Swooper;
-        } else {
-            type = EnemyType.Standard;
-        }
+        let type: EnemyType; const random = Math.random();
+        if (difficultyProgress > 0.6 && random < 0.15) type = EnemyType.Splitter;
+        else if (difficultyProgress > 0.4 && random < 0.40) type = EnemyType.Turret;
+        else if (difficultyProgress > 0.5 && random < 0.65) type = EnemyType.Dasher;
+        else if (difficultyProgress > 0.2 && random < 0.90) type = EnemyType.Swooper;
+        else type = EnemyType.Standard;
         
-        const newEnemy: Enemy = {
-            id: now, x, y: -ENEMY_HEIGHT, width: ENEMY_WIDTH, height: ENEMY_HEIGHT,
-            hp, value, color, type,
-        };
-        if (type === EnemyType.Swooper) { newEnemy.initialX = x; newEnemy.swoopDirection = 1; }
+        const newEnemy: Enemy = { id: now, x: Math.random() * (GAME_WIDTH - ENEMY_WIDTH), y: -ENEMY_HEIGHT, width: ENEMY_WIDTH, height: ENEMY_HEIGHT, hp, value, color, type };
+        if (type === EnemyType.Swooper) { newEnemy.initialX = newEnemy.x; newEnemy.swoopDirection = 1; }
         if (type === EnemyType.Dasher) { newEnemy.phase = 'descending'; }
-        if (type === EnemyType.Turret) {
-            newEnemy.phase = 'descending';
-            newEnemy.hp *= 2;
-            newEnemy.value *= 2;
-            newEnemy.horizontalDirection = Math.random() < 0.5 ? 1 : -1;
-        }
-        if (type === EnemyType.Splitter) {
-            newEnemy.hp *= SPLITTER_HP_MULTIPLIER;
-            newEnemy.value = Math.floor(newEnemy.value * SPLITTER_VALUE_MULTIPLIER);
-            newEnemy.width *= 1.2;
-            newEnemy.height *= 1.2;
-        }
+        if (type === EnemyType.Turret) { newEnemy.phase = 'descending'; newEnemy.hp *= 2; newEnemy.value *= 2; newEnemy.horizontalDirection = Math.random() < 0.5 ? 1 : -1; }
+        if (type === EnemyType.Splitter) { newEnemy.hp *= SPLITTER_HP_MULTIPLIER; newEnemy.value = Math.floor(newEnemy.value * SPLITTER_VALUE_MULTIPLIER); newEnemy.width *= 1.2; newEnemy.height *= 1.2; }
         enemies.push(newEnemy);
       }
       
+      // --- CLEANUP ---
       floatingTexts = floatingTexts.filter(ft => now - ft.startTime < FLOATING_TEXT_DURATION);
-      enemies = enemies.filter(e => {
-        if (e.deathTime) { return now - e.deathTime < ENEMY_DEATH_FADE_DURATION; }
-        if (e.isClearing) { return e.y + e.height > 0; }
-        return true;
-      });
+      enemies = enemies.filter(e => e.deathTime ? now - e.deathTime < ENEMY_DEATH_FADE_DURATION : e.isClearing ? e.y + e.height > 0 : true);
 
-      return { ...state, player, enemies, projectiles, enemyProjectiles, stars, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, playerHitTime, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime };
+      return { ...state, player, enemies, projectiles, enemyProjectiles, stars, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, playerHitTime, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime, wave, bossState, bossWarningTime, bossDefeatedTime };
     }
     default:
       return state;
@@ -970,6 +959,8 @@ const App: React.FC = () => {
   
   const leftTarget = state.enemies.find(e => e.id === state.leftDroneTargetId);
   const rightTarget = state.enemies.find(e => e.id === state.rightDroneTargetId);
+
+  const boss = state.enemies.find(e => e.type === EnemyType.Boss);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black font-mono text-cyan-400 p-4">
@@ -1070,6 +1061,11 @@ const App: React.FC = () => {
               } else if (enemy.deathTime) {
                 const timeSinceDeath = now - enemy.deathTime;
                 opacity = 1 - Math.min(1, timeSinceDeath / ENEMY_DEATH_FADE_DURATION);
+                if (enemy.type === EnemyType.Boss) {
+                    const scale = 1 + (timeSinceDeath / ENEMY_DEATH_FADE_DURATION) * 0.5;
+                    style.transform = `scale(${scale})`;
+                    style.filter = `blur(${timeSinceDeath / 100}px)`;
+                }
               }
               style.opacity = opacity;
 
@@ -1135,9 +1131,9 @@ const App: React.FC = () => {
         )}
 
         {/* UI Overlays */}
-        <div className="absolute inset-0 flex items-center justify-center text-center">
+        <div className="absolute inset-0 flex items-center justify-center text-center pointer-events-none">
           {state.status === GameStatus.Start && (
-            <div className="flex flex-col items-center gap-6">
+            <div className="flex flex-col items-center gap-6 pointer-events-auto">
               <div className="text-center">
                 <h1 className="text-6xl font-bold text-cyan-400 filter drop-shadow-[0_0_8px_#0ff]">ARES</h1>
                 <p className="text-2xl mt-2 text-cyan-300">A Really Easy Shooter</p>
@@ -1150,7 +1146,7 @@ const App: React.FC = () => {
           )}
 
           {state.status === GameStatus.GameOver && (
-            <div className="flex flex-col items-center gap-4 bg-black/80 p-6 rounded-lg w-full max-w-sm">
+            <div className="flex flex-col items-center gap-4 bg-black/80 p-6 rounded-lg w-full max-w-sm pointer-events-auto">
               <h2 className="text-5xl font-bold text-red-500 filter drop-shadow-[0_0_8px_#f00]">GAME OVER</h2>
               <p className="text-2xl">KILLS: {state.killCount}</p>
               <div>
@@ -1184,18 +1180,26 @@ const App: React.FC = () => {
               </button>
             </div>
           )}
+
+            {state.bossState === 'warning' && (
+                <div className="z-20">
+                    <h2 className="text-6xl font-bold text-red-500 filter drop-shadow-[0_0_8px_#f00] animate-pulse">WARNING</h2>
+                </div>
+            )}
         </div>
 
         {/* Score Display */}
         {state.status === GameStatus.Playing && (
           <>
-            <div className="absolute top-4 left-4 text-left">
+            <div className="absolute top-4 left-4 text-left z-20">
                 <div className="text-2xl font-bold">KILLS: {state.killCount}</div>
                 <div className="text-xl">SHIELDS: {state.shields}</div>
             </div>
-            <div className="absolute top-4 right-4 text-right">
+            <div className="absolute top-4 right-4 text-right z-20">
                 <div className="text-2xl font-bold">${state.money}</div>
+                <div className="text-xl">WAVE: {state.bossState === 'defeated' ? state.wave + 1 : state.wave}</div>
             </div>
+            {boss && state.bossState === 'fighting' && <BossHealthBar boss={boss} />}
           </>
         )}
       </div>

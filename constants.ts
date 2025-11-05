@@ -57,6 +57,19 @@ export const STAR_COUNT = 100;
 export const STAR_SPEED_MIN = 0.5;
 export const STAR_SPEED_MAX = 2;
 
+// --- WAVES & BOSS ---
+export const KILLS_PER_WAVE = 25;
+export const WAVE_FOR_BOSS = 3;
+export const BOSS_WIDTH = 150;
+export const BOSS_HEIGHT = 100;
+export const BOSS_BASE_HP = 500;
+export const BOSS_HP_PER_LOOP = 250;
+export const BOSS_VALUE = 2500;
+export const BOSS_ENTER_Y = 100;
+export const BOSS_HORIZONTAL_SPEED = 2;
+export const BOSS_WARNING_DURATION = 3000; // ms
+export const BOSS_DEFEATED_DURATION = 3000; // ms
+
 // --- UPGRADES ---
 export const UPGRADE_BAR_HEIGHT = 112; // h-24 (96px) + p-2 (8px top/bottom = 16px)
 export const HOMING_DRONE_SCALE = 0.3;
