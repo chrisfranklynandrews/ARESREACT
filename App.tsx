@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useReducer, useRef } from 'react';
-import { GameStatus, Player, Enemy, Projectile, Star, FloatingText, EnemyType, ProjectileType, EnemyProjectile } from './types';
+import { GameStatus, Player, Enemy, Projectile, Star, FloatingText, EnemyType, ProjectileType, EnemyProjectile, Particle, BreachExplosion } from './types';
 import {
   GAME_WIDTH,
   GAME_HEIGHT,
@@ -38,6 +38,7 @@ import {
   INITIAL_BULLET_POWER_COST,
   UPGRADE_COST_MULTIPLIER,
   INITIAL_INTEREST_COST,
+  INTEREST_RATE_PER_LEVEL,
   FLOATING_TEXT_DURATION,
   FLOATING_TEXT_LIFT,
   INITIAL_SHIELD_COST,
@@ -83,6 +84,14 @@ import {
   BOSS_HORIZONTAL_SPEED,
   BOSS_DEFEATED_DURATION,
   BOSS_HP_PER_LOOP,
+  HOMING_MISSILE_INITIAL_TARGET_Y_FACTOR,
+  HOMING_MISSILE_PARTICLE_SPAWN_RATE,
+  HOMING_MISSILE_PARTICLE_LIFESPAN,
+  HOMING_MISSILE_PARTICLE_SPEED,
+  HOMING_MISSILE_PARTICLE_SIZE,
+  BREACH_EFFECT_DURATION,
+  INITIAL_CASH_BOOST_COST,
+  CASH_BOOST_PER_LEVEL,
 } from './constants';
 
 // --- VISUAL COMPONENTS ---
@@ -245,6 +254,33 @@ const PlayerHitExplosion: React.FC<{ player: Player; startTime: number }> = ({ p
     );
 };
 
+const BreachExplosion: React.FC<{ x: number; startTime: number }> = React.memo(({ x, startTime }) => {
+    const elapsedTime = Date.now() - startTime;
+    const progress = elapsedTime / BREACH_EFFECT_DURATION;
+
+    if (progress > 1) return null;
+
+    const size = PLAYER_WIDTH * 2.5 * progress;
+    const opacity = 1 - Math.pow(progress, 2);
+
+    return (
+        <div
+            className="absolute rounded-full border-4 pointer-events-none"
+            style={{
+                left: x - size / 2,
+                top: (GAME_HEIGHT - UPGRADE_BAR_HEIGHT) - size / 2,
+                width: size,
+                height: size,
+                opacity: opacity,
+                borderColor: '#ff6600',
+                boxShadow: '0 0 15px #ff6600, inset 0 0 10px #ff6600',
+                willChange: 'transform, opacity, width, height',
+                zIndex: 20,
+            }}
+        />
+    );
+});
+
 const LaserBeam: React.FC<{ from: { x: number; y: number }; to: { x: number; y: number } }> = React.memo(({ from, to }) => (
     <svg className="absolute top-0 left-0 w-full h-full pointer-events-none filter drop-shadow-[0_0_4px_rgba(255,0,0,0.9)] drop-shadow-[0_0_8px_rgba(255,0,0,0.5)]">
       <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="red" strokeWidth="3" />
@@ -289,7 +325,7 @@ const LaserBeam: React.FC<{ from: { x: number; y: number }; to: { x: number; y: 
 const BossHealthBar: React.FC<{ boss: Enemy }> = ({ boss }) => {
     const healthPercentage = (boss.hp / (boss.maxHp ?? boss.hp)) * 100;
     return (
-      <div className="absolute top-10 left-1/2 -translate-x-1/2 w-4/5 h-6 bg-black/50 border-2 border-red-500 rounded-md p-1 z-20">
+      <div className="absolute top-20 left-1/2 -translate-x-1/2 w-4/5 h-6 bg-black/50 border-2 border-red-500 rounded-md p-1 z-20">
         <div
           className="h-full bg-red-500 rounded-sm transition-all duration-200"
           style={{ width: `${healthPercentage}%`, boxShadow: '0 0 8px #f00' }}
@@ -304,7 +340,7 @@ const BossHealthBar: React.FC<{ boss: Enemy }> = ({ boss }) => {
 // --- UPGRADE ICONS ---
 
 const BulletRateIcon: React.FC = () => (
-    <svg xmlns="http://www.w.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 11-3-3-3 3"/><path d="m15 17-3-3-3 3"/><path d="M12 20V4"/></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 11-3-3-3 3"/><path d="m15 17-3-3-3 3"/><path d="M12 20V4"/></svg>
 );
 
 const BulletPowerIcon: React.FC = () => (
@@ -319,8 +355,21 @@ const InterestIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
 );
 
+const CashBoostIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="12" y1="2" y2="22"/>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        <path d="M19 15h-4"/>
+        <path d="M17 13v4"/>
+    </svg>
+);
+
 const ShieldIcon: React.FC = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+);
+
+const PauseIcon: React.FC = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="4" x2="6" y2="20"></line><line x1="18" y1="4" x2="18" y2="20"></line></svg>
 );
 
 
@@ -334,6 +383,8 @@ type GameState = {
   projectiles: Projectile[];
   enemyProjectiles: EnemyProjectile[];
   stars: Star[];
+  particles: Particle[];
+  breachExplosions: BreachExplosion[];
   killCount: number;
   lastEnemySpawn: number;
   lastProjectileSpawn: number;
@@ -355,18 +406,22 @@ type GameState = {
   bossState: 'none' | 'warning' | 'fighting' | 'defeated';
   bossWarningTime: number;
   bossDefeatedTime: number;
+  pauseStartTime?: number;
 
   // Persistent state
   money: number;
+  moneyGlowTime: number;
   bulletRateLevel: number;
   bulletPowerLevel: number;
   shipLevel: number;
   interestLevel: number;
+  cashBoostLevel: number;
   shieldLevel: number;
   bulletRateCost: number;
   bulletPowerCost: number;
   shipLevelCost: number;
   interestCost: number;
+  cashBoostCost: number;
   shieldCost: number;
 };
 
@@ -380,7 +435,10 @@ type Action =
   | { type: 'UPGRADE_BULLET_POWER' }
   | { type: 'UPGRADE_SHIP_LEVEL' }
   | { type: 'UPGRADE_INTEREST' }
-  | { type: 'UPGRADE_SHIELD' };
+  | { type: 'UPGRADE_CASH_BOOST' }
+  | { type: 'UPGRADE_SHIELD' }
+  | { type: 'PAUSE_GAME' }
+  | { type: 'RESUME_GAME' };
   
 const createInitialRunState = () => {
   const initialPlayer = {
@@ -402,6 +460,8 @@ const createInitialRunState = () => {
     enemies: [],
     projectiles: [],
     enemyProjectiles: [],
+    particles: [],
+    breachExplosions: [],
     killCount: 0,
     lastEnemySpawn: 0,
     lastProjectileSpawn: 0,
@@ -450,15 +510,18 @@ const createInitialState = (): GameState => {
     stars,
     shields: 1,
     money: 0,
+    moneyGlowTime: 0,
     bulletRateLevel: 1,
     bulletPowerLevel: 1,
     shipLevel: 1,
     interestLevel: 1,
+    cashBoostLevel: 1,
     shieldLevel: 1,
     bulletRateCost: INITIAL_BULLET_RATE_COST,
     bulletPowerCost: INITIAL_BULLET_POWER_COST,
     shipLevelCost: INITIAL_SHIP_LEVEL_COST,
     interestCost: INITIAL_INTEREST_COST,
+    cashBoostCost: INITIAL_CASH_BOOST_COST,
     shieldCost: INITIAL_SHIELD_COST,
   };
 };
@@ -489,21 +552,22 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       return { ...state, status: GameStatus.GameOver };
     case 'RESTART': {
       const now = Date.now();
-      const interestRate = (state.interestLevel) * 0.01;
-      const earnedInterest = Math.round(state.money * interestRate);
-
+      
       const persistentState = {
         stars: state.stars,
-        money: state.money + earnedInterest,
+        money: state.money,
+        moneyGlowTime: state.moneyGlowTime,
         bulletRateLevel: state.bulletRateLevel,
         bulletPowerLevel: state.bulletPowerLevel,
         shipLevel: state.shipLevel,
         interestLevel: state.interestLevel,
+        cashBoostLevel: state.cashBoostLevel,
         shieldLevel: state.shieldLevel,
         bulletRateCost: state.bulletRateCost,
         bulletPowerCost: state.bulletPowerCost,
         shipLevelCost: state.shipLevelCost,
         interestCost: state.interestCost,
+        cashBoostCost: state.cashBoostCost,
         shieldCost: state.shieldCost,
       };
 
@@ -558,6 +622,15 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         interestCost: Math.floor(state.interestCost * UPGRADE_COST_MULTIPLIER),
       };
     }
+    case 'UPGRADE_CASH_BOOST': {
+        if (state.money < state.cashBoostCost) return state;
+        return {
+          ...state,
+          money: state.money - state.cashBoostCost,
+          cashBoostLevel: state.cashBoostLevel + 1,
+          cashBoostCost: Math.floor(state.cashBoostCost * UPGRADE_COST_MULTIPLIER),
+        };
+      }
     case 'UPGRADE_SHIELD': {
         if (state.money < state.shieldCost) return state;
         return {
@@ -567,11 +640,51 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           shieldCost: Math.floor(state.shieldCost * UPGRADE_COST_MULTIPLIER),
         };
       }
+    case 'PAUSE_GAME':
+        return { ...state, status: GameStatus.Paused, pauseStartTime: Date.now() };
+    case 'RESUME_GAME': {
+        if (!state.pauseStartTime) return state; // Should not happen
+        const now = Date.now();
+        const pausedDuration = now - state.pauseStartTime;
+
+        return {
+            ...state,
+            status: GameStatus.Playing,
+            pauseStartTime: undefined,
+            // Adjust all relevant timestamps
+            lastEnemySpawn: state.lastEnemySpawn + pausedDuration,
+            lastProjectileSpawn: state.lastProjectileSpawn + pausedDuration,
+            lastMissileSpawn: state.lastMissileSpawn + pausedDuration,
+            gameStartTime: state.gameStartTime + pausedDuration,
+            playerHitTime: state.playerHitTime > 0 ? state.playerHitTime + pausedDuration : 0,
+            leftDroneStateTime: state.leftDroneStateTime + pausedDuration,
+            rightDroneStateTime: state.rightDroneStateTime + pausedDuration,
+            bossWarningTime: state.bossWarningTime > 0 ? state.bossWarningTime + pausedDuration : 0,
+            bossDefeatedTime: state.bossDefeatedTime > 0 ? state.bossDefeatedTime + pausedDuration : 0,
+            
+            floatingTexts: state.floatingTexts.map(item => ({...item, startTime: item.startTime + pausedDuration})),
+            particles: state.particles.map(item => ({...item, startTime: item.startTime + pausedDuration})),
+            breachExplosions: state.breachExplosions.map(item => ({...item, startTime: item.startTime + pausedDuration})),
+            
+            enemies: state.enemies.map(e => ({
+                ...e,
+                deathTime: e.deathTime ? e.deathTime + pausedDuration : undefined,
+                pauseTime: e.pauseTime ? e.pauseTime + pausedDuration : undefined,
+                lastFired: e.lastFired ? e.lastFired + pausedDuration : undefined,
+                attackTimer: e.attackTimer ? e.attackTimer + pausedDuration : undefined,
+            })),
+
+            projectiles: state.projectiles.map(p => ({
+                ...p,
+                lastParticleSpawn: p.lastParticleSpawn ? p.lastParticleSpawn + pausedDuration : undefined,
+            }))
+        };
+    }
     case 'TICK': {
       if (state.status !== GameStatus.Playing) return state;
 
       const now = Date.now();
-      let { player, enemies, projectiles, enemyProjectiles, stars, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime, wave, bossState, bossWarningTime, bossDefeatedTime } = { ...state };
+      let { player, enemies, projectiles, enemyProjectiles, stars, particles, breachExplosions, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime, wave, bossState, bossWarningTime, bossDefeatedTime, moneyGlowTime } = { ...state };
       let playerHitTime = state.playerHitTime;
       const newFloatingTexts: FloatingText[] = [];
 
@@ -596,11 +709,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         playerHitTime = 0;
       }
 
+      const activeEnemies = enemies.filter(e => !e.isClearing && e.hp > 0);
+      const visibleEnemies = activeEnemies.filter(e => e.y >= 0);
+
       // --- PLAYER & DRONE MOVEMENT ---
       let playerTargetX: number;
-      const activeEnemies = enemies.filter(e => !e.isClearing && e.hp > 0);
-      if (activeEnemies.length > 0) {
-        const targetEnemy = activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest));
+      if (visibleEnemies.length > 0) {
+        const targetEnemy = visibleEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest));
         playerTargetX = targetEnemy.x + targetEnemy.width / 2 - player.width / 2;
       } else {
         playerTargetX = GAME_WIDTH / 2 - player.width / 2;
@@ -626,25 +741,68 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       homingDrone.y += (targetHomingDroneY - homingDrone.y) * DRONE_SMOOTHING_FACTOR;
 
       // --- STAR MOVEMENT ---
+      const isBossFighting = bossState === 'fighting';
       stars = stars.map(star => {
-        const newY = star.y + star.speed;
-        return newY > GAME_HEIGHT ? { ...star, y: 0, x: Math.random() * GAME_WIDTH } : { ...star, y: newY };
+        const speed = isBossFighting ? star.speed / 2 : star.speed;
+        const newY = isBossFighting ? star.y - speed : star.y + speed;
+        if (isBossFighting) {
+            return newY < 0 ? { ...star, y: GAME_HEIGHT, x: Math.random() * GAME_WIDTH } : { ...star, y: newY };
+        } else {
+            return newY > GAME_HEIGHT ? { ...star, y: 0, x: Math.random() * GAME_WIDTH } : { ...star, y: newY };
+        }
       });
 
-      // --- PROJECTILE MOVEMENT ---
+      // --- PROJECTILE MOVEMENT & PARTICLE SPAWNING ---
       projectiles = projectiles.map(p => {
         if (p.type === ProjectileType.Homing) {
-            let target = activeEnemies.find(e => e.id === p.targetId);
-            if (!target) target = activeEnemies.length > 0 ? activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)) : undefined;
             let newAngle = p.angle ?? -Math.PI / 2;
-            if (target) {
-                const targetAngle = Math.atan2(target.y + target.height / 2 - p.y, target.x + target.width / 2 - p.x);
-                let angleDiff = targetAngle - newAngle;
-                while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
-                while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
-                newAngle += Math.min(HOMING_MISSILE_TURN_RATE, Math.abs(angleDiff)) * Math.sign(angleDiff);
+            let newX = p.x;
+            let newY = p.y;
+            let phase = p.phase;
+            let targetId = p.targetId;
+
+            if (phase === 'initialBoost') {
+                const targetX = p.initialTargetX ?? GAME_WIDTH / 2;
+                const targetY = p.initialTargetY ?? GAME_HEIGHT / 2;
+                const targetAngle = Math.atan2(targetY - p.y, targetX - p.x);
+
+                newX = p.x + Math.cos(targetAngle) * HOMING_MISSILE_SPEED;
+                newY = p.y + Math.sin(targetAngle) * HOMING_MISSILE_SPEED;
+                newAngle = targetAngle; 
+
+                if (Math.hypot(newX - targetX, newY - targetY) < 20) {
+                    phase = 'homing';
+                }
+            } else { // 'homing' phase
+                let target = visibleEnemies.find(e => e.id === p.targetId);
+                if (!target) target = visibleEnemies.length > 0 ? visibleEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)) : undefined;
+                
+                if (target) {
+                    const targetAngle = Math.atan2(target.y + target.height / 2 - p.y, target.x + target.width / 2 - p.x);
+                    let angleDiff = targetAngle - newAngle;
+                    while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+                    while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+                    newAngle += Math.min(HOMING_MISSILE_TURN_RATE, Math.abs(angleDiff)) * Math.sign(angleDiff);
+                }
+                newX = p.x + Math.cos(newAngle) * HOMING_MISSILE_SPEED;
+                newY = p.y + Math.sin(newAngle) * HOMING_MISSILE_SPEED;
+                targetId = target?.id;
             }
-            return { ...p, x: p.x + Math.cos(newAngle) * HOMING_MISSILE_SPEED, y: p.y + Math.sin(newAngle) * HOMING_MISSILE_SPEED, angle: newAngle, targetId: target?.id };
+
+            if (now - (p.lastParticleSpawn ?? 0) > HOMING_MISSILE_PARTICLE_SPAWN_RATE) {
+                const trailAngle = newAngle + Math.PI + (Math.random() - 0.5) * 0.5;
+                particles.push({
+                    id: now + Math.random(),
+                    x: newX + p.width / 2, y: newY + p.height / 2,
+                    vx: Math.cos(trailAngle) * HOMING_MISSILE_PARTICLE_SPEED * Math.random(),
+                    vy: Math.sin(trailAngle) * HOMING_MISSILE_PARTICLE_SPEED * Math.random(),
+                    size: Math.random() * HOMING_MISSILE_PARTICLE_SIZE,
+                    startTime: now, lifespan: HOMING_MISSILE_PARTICLE_LIFESPAN, color: '#ff8c00',
+                });
+                p.lastParticleSpawn = now;
+            }
+
+            return { ...p, x: newX, y: newY, angle: newAngle, phase, targetId };
         }
         return { ...p, x: p.x + Math.cos(p.angle ?? 0) * PROJECTILE_SPEED, y: p.y + Math.sin(p.angle ?? -Math.PI / 2) * PROJECTILE_SPEED };
       }).filter(p => p.y + p.height > 0 && p.y < GAME_HEIGHT && p.x + p.width > 0 && p.x < GAME_WIDTH);
@@ -656,89 +814,137 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           return { ...enemy, y: enemy.y - ENEMY_SPEED * 2.5, recoil: undefined };
         }
         if (enemy.hp <= 0) {
-          return enemy; // Don't move dead or dying enemies.
+          return enemy;
         }
       
-        // Apply recoil and create a base state for this tick's modifications
-        let recoil = enemy.recoil;
-        let y = enemy.y;
-        if (recoil) {
-          y -= recoil;
-          recoil *= 0.9;
-          if (recoil < 0.5) recoil = undefined;
-        }
-        const enemyTickState: Enemy = { ...enemy, y, recoil };
+        const updatedEnemy = { ...enemy };
       
-        switch (enemyTickState.type) {
+        // 1. Apply recoil first
+        if (updatedEnemy.recoil) {
+          updatedEnemy.y -= updatedEnemy.recoil;
+          updatedEnemy.recoil *= 0.9;
+          if (updatedEnemy.recoil < 0.5) {
+            updatedEnemy.recoil = undefined;
+          }
+        }
+      
+        // 2. Then apply movement based on type
+        switch (updatedEnemy.type) {
           case EnemyType.Swooper: {
-            const newY = enemyTickState.y + ENEMY_SPEED;
-            const newX = (enemyTickState.initialX ?? enemyTickState.x) + Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE * (enemyTickState.swoopDirection ?? 1);
-            return { ...enemyTickState, x: newX, y: newY };
+            const newY = updatedEnemy.y + ENEMY_SPEED;
+            const newX = (updatedEnemy.initialX ?? updatedEnemy.x) + Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE * (updatedEnemy.swoopDirection ?? 1);
+            updatedEnemy.x = newX;
+            updatedEnemy.y = newY;
+            break;
           }
           case EnemyType.Dasher: {
-            let { x, y, phase, pauseTime, dashTargetX } = enemyTickState;
-            if (phase === 'descending') {
-              y += ENEMY_SPEED;
-              if (y >= DASHER_PAUSE_Y) { y = DASHER_PAUSE_Y; phase = 'pausing'; pauseTime = now; }
-            } else if (phase === 'pausing') {
-              if (now - (pauseTime ?? 0) > DASHER_PAUSE_DURATION) { phase = 'dashing'; dashTargetX = player.x; }
-            } else if (phase === 'dashing') {
-              const angle = Math.atan2(GAME_HEIGHT - y, (dashTargetX ?? x) - x);
-              x += Math.cos(angle) * DASHER_DASH_SPEED;
-              y += Math.sin(angle) * DASHER_DASH_SPEED;
+            if (updatedEnemy.phase === 'descending') {
+              updatedEnemy.y += ENEMY_SPEED;
+              if (updatedEnemy.y >= DASHER_PAUSE_Y) {
+                updatedEnemy.y = DASHER_PAUSE_Y;
+                updatedEnemy.phase = 'pausing';
+                updatedEnemy.pauseTime = now;
+              }
+            } else if (updatedEnemy.phase === 'pausing') {
+              if (now - (updatedEnemy.pauseTime ?? 0) > DASHER_PAUSE_DURATION) {
+                updatedEnemy.phase = 'dashing';
+                updatedEnemy.dashTargetX = player.x;
+              }
+            } else if (updatedEnemy.phase === 'dashing') {
+              const angle = Math.atan2(GAME_HEIGHT - updatedEnemy.y, (updatedEnemy.dashTargetX ?? updatedEnemy.x) - updatedEnemy.x);
+              updatedEnemy.x += Math.cos(angle) * DASHER_DASH_SPEED;
+              updatedEnemy.y += Math.sin(angle) * DASHER_DASH_SPEED;
             }
-            return { ...enemyTickState, x, y, phase, pauseTime, dashTargetX };
+            break;
           }
           case EnemyType.Turret: {
-            let { x, y, phase, horizontalDirection, lastFired } = enemyTickState;
-            if (phase === 'descending') {
-              y += ENEMY_SPEED / 2;
-              if (y >= TURRET_STOP_Y) { y = TURRET_STOP_Y; phase = 'active'; lastFired = now; }
-            } else if (phase === 'active') {
-              horizontalDirection = horizontalDirection ?? 1;
-              x += TURRET_HORIZONTAL_SPEED * horizontalDirection;
-              if (x <= 0 || x >= GAME_WIDTH - enemyTickState.width) { horizontalDirection *= -1; }
-              if (now - (lastFired ?? 0) > TURRET_FIRE_RATE) {
-                lastFired = now;
+            if (updatedEnemy.phase === 'descending') {
+              updatedEnemy.y += ENEMY_SPEED / 2;
+              if (updatedEnemy.y >= TURRET_STOP_Y) {
+                updatedEnemy.y = TURRET_STOP_Y;
+                updatedEnemy.phase = 'active';
+                updatedEnemy.lastFired = now;
+              }
+            } else if (updatedEnemy.phase === 'active') {
+              updatedEnemy.horizontalDirection = updatedEnemy.horizontalDirection ?? 1;
+              updatedEnemy.x += TURRET_HORIZONTAL_SPEED * updatedEnemy.horizontalDirection;
+              if (updatedEnemy.x <= 0 || updatedEnemy.x >= GAME_WIDTH - updatedEnemy.width) {
+                updatedEnemy.horizontalDirection *= -1;
+              }
+              if (now - (updatedEnemy.lastFired ?? 0) > TURRET_FIRE_RATE) {
+                updatedEnemy.lastFired = now;
                 newEnemyProjectiles.push({
-                  id: now + Math.random(), x: x + enemyTickState.width / 2 - ENEMY_PROJECTILE_WIDTH / 2, y: y + enemyTickState.height,
-                  width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED,
+                  id: now + Math.random(),
+                  x: updatedEnemy.x + updatedEnemy.width / 2 - ENEMY_PROJECTILE_WIDTH / 2,
+                  y: updatedEnemy.y + updatedEnemy.height,
+                  width: ENEMY_PROJECTILE_WIDTH,
+                  height: ENEMY_PROJECTILE_HEIGHT,
+                  vx: 0,
+                  vy: ENEMY_PROJECTILE_SPEED,
                 });
               }
             }
-            return { ...enemyTickState, x, y, phase, horizontalDirection, lastFired };
+            break;
           }
           case EnemyType.Splinter: {
-            const vx = (enemyTickState.vx ?? 0) * SPLINTER_DRAG;
-            const vy = ((enemyTickState.vy ?? 0) * SPLINTER_DRAG) + SPLINTER_GRAVITY;
-            return { ...enemyTickState, x: enemyTickState.x + vx, y: enemyTickState.y + vy, vx, vy };
+            const vx = (updatedEnemy.vx ?? 0) * SPLINTER_DRAG;
+            const vy = ((updatedEnemy.vy ?? 0) * SPLINTER_DRAG) + SPLINTER_GRAVITY;
+            updatedEnemy.x += vx;
+            updatedEnemy.y += vy;
+            updatedEnemy.vx = vx;
+            updatedEnemy.vy = vy;
+            break;
           }
           case EnemyType.Boss: {
-            let { x, y, phase, horizontalDirection, attackTimer, attackPhase } = enemyTickState;
-            if (phase === 'entering') {
-              y += ENEMY_SPEED / 2;
-              if (y >= BOSS_ENTER_Y) { y = BOSS_ENTER_Y; phase = 'phase1'; attackTimer = now; }
-            } else if (phase === 'phase1' || phase === 'phase2') {
-              horizontalDirection = horizontalDirection ?? 1;
-              x += BOSS_HORIZONTAL_SPEED * horizontalDirection;
-              if (x <= 0 || x >= GAME_WIDTH - enemyTickState.width) horizontalDirection *= -1;
-              if (enemyTickState.hp < (enemyTickState.maxHp ?? 0) / 2 && phase === 'phase1') phase = 'phase2';
-              
-              const cooldown = phase === 'phase2' ? 800 : 1500;
-              if (now - (attackTimer ?? 0) > cooldown) {
-                attackTimer = now;
-                attackPhase = ((attackPhase ?? 0) + 1) % 4;
-                const centerX = x + enemyTickState.width / 2;
-                if (attackPhase === 0) for (let i = -3; i <= 3; i++) newEnemyProjectiles.push({ id: now + i + Math.random(), x: centerX, y: y + enemyTickState.height - 20, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED, vy: Math.sin(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED });
-                else if (attackPhase === 1 || attackPhase === 3) for (let i = 0; i < (phase === 'phase2' ? 5 : 3); i++) { newEnemyProjectiles.push({ id: now + i * 100 + 100 + Math.random(), x: x + 20, y: y + enemyTickState.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 }); newEnemyProjectiles.push({ id: now + i * 100 + 200 + Math.random(), x: x + enemyTickState.width - 20, y: y + enemyTickState.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 }); } 
-                else { const angleToPlayer = Math.atan2(player.y - (y + enemyTickState.height), player.x - centerX); for (let i = -1; i <= 1; i++) newEnemyProjectiles.push({ id: now + 300 + i + Math.random(), x: centerX, y: y + enemyTickState.height / 2, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5, vy: Math.sin(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5 }); }
+            if (updatedEnemy.phase === 'entering') {
+              updatedEnemy.y += ENEMY_SPEED / 2;
+              if (updatedEnemy.y >= BOSS_ENTER_Y) {
+                updatedEnemy.y = BOSS_ENTER_Y;
+                updatedEnemy.phase = 'phase1';
+                updatedEnemy.attackTimer = now;
+              }
+            } else if (updatedEnemy.phase === 'phase1' || updatedEnemy.phase === 'phase2') {
+              updatedEnemy.horizontalDirection = updatedEnemy.horizontalDirection ?? 1;
+              updatedEnemy.x += BOSS_HORIZONTAL_SPEED * updatedEnemy.horizontalDirection;
+              if (updatedEnemy.x <= 0 || updatedEnemy.x >= GAME_WIDTH - updatedEnemy.width) {
+                updatedEnemy.horizontalDirection *= -1;
+              }
+              if (updatedEnemy.hp < (updatedEnemy.maxHp ?? 0) / 2 && updatedEnemy.phase === 'phase1') {
+                updatedEnemy.phase = 'phase2';
+              }
+      
+              const cooldown = updatedEnemy.phase === 'phase2' ? 800 : 1500;
+              if (now - (updatedEnemy.attackTimer ?? 0) > cooldown) {
+                updatedEnemy.attackTimer = now;
+                updatedEnemy.attackPhase = ((updatedEnemy.attackPhase ?? 0) + 1) % 4;
+                const centerX = updatedEnemy.x + updatedEnemy.width / 2;
+                if (updatedEnemy.attackPhase === 0) {
+                  for (let i = -3; i <= 3; i++) {
+                    newEnemyProjectiles.push({ id: now + i + Math.random(), x: centerX, y: updatedEnemy.y + updatedEnemy.height - 20, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED, vy: Math.sin(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED });
+                  }
+                } else if (updatedEnemy.attackPhase === 1 || updatedEnemy.attackPhase === 3) {
+                  for (let i = 0; i < (updatedEnemy.phase === 'phase2' ? 5 : 3); i++) {
+                    newEnemyProjectiles.push({ id: now + i * 100 + 100 + Math.random(), x: updatedEnemy.x + 20, y: updatedEnemy.y + updatedEnemy.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 });
+                    newEnemyProjectiles.push({ id: now + i * 100 + 200 + Math.random(), x: updatedEnemy.x + updatedEnemy.width - 20, y: updatedEnemy.y + updatedEnemy.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 });
+                  }
+                } else {
+                  const angleToPlayer = Math.atan2(player.y - (updatedEnemy.y + updatedEnemy.height), player.x - centerX);
+                  for (let i = -1; i <= 1; i++) {
+                    newEnemyProjectiles.push({ id: now + 300 + i + Math.random(), x: centerX, y: updatedEnemy.y + updatedEnemy.height / 2, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5, vy: Math.sin(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5 });
+                  }
+                }
               }
             }
-            return { ...enemyTickState, x, y, phase, horizontalDirection, attackTimer, attackPhase };
+            break;
           }
           default: // Standard, Splitter
-            return { ...enemyTickState, y: enemyTickState.y + ENEMY_SPEED };
+            if (!updatedEnemy.recoil) {
+                updatedEnemy.y += ENEMY_SPEED;
+            }
+            break;
         }
+      
+        return updatedEnemy;
       });
       enemyProjectiles = [...enemyProjectiles, ...newEnemyProjectiles]
         .map(p => ({ ...p, y: p.y + (p.vy ?? ENEMY_PROJECTILE_SPEED), x: p.x + (p.vx ?? 0) }))
@@ -752,7 +958,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
               if (enemy.hp <= 0 || enemy.isClearing) continue;
               if (intersects(projectile, enemy)) {
                   enemy.hp -= projectile.power;
-                  enemy.recoil = (enemy.recoil || 0) + ENEMY_RECOIL_AMOUNT * (enemy.type === EnemyType.Boss ? 0.1 : 1);
+                  if (enemy.type !== EnemyType.Boss) {
+                    enemy.recoil = ENEMY_RECOIL_AMOUNT;
+                  }
                   hitProjectileIds.add(projectile.id);
                   break;
               }
@@ -774,9 +982,9 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       else if (rightDroneState === 'cooldown' && now - rightDroneStateTime > BEAM_COOLDOWN_DURATION) { rightDroneState = 'firing'; rightDroneStateTime = now; }
 
       let potentialLeftTarget: Enemy | undefined, potentialRightTarget: Enemy | undefined;
-      if (activeEnemies.length > 0) {
-          potentialLeftTarget = activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest));
-          const enemiesSorted = [...activeEnemies].sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
+      if (visibleEnemies.length > 0) {
+          potentialLeftTarget = visibleEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest));
+          const enemiesSorted = [...visibleEnemies].sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y));
           potentialRightTarget = enemiesSorted[0].id !== potentialLeftTarget.id ? enemiesSorted[0] : enemiesSorted[1] ?? enemiesSorted[0];
       }
 
@@ -800,8 +1008,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       enemies.forEach(enemy => {
         if (enemy.hp <= 0 && !enemy.deathTime) {
             enemy.deathTime = now;
-            money += enemy.value;
-            newFloatingTexts.push({ id: now + Math.random(), x: enemy.x + enemy.width / 2, y: enemy.y, text: `+$${enemy.value}`, startTime: now });
+            const cashBoostMultiplier = 1 + (state.cashBoostLevel - 1) * CASH_BOOST_PER_LEVEL;
+            const earnedValue = Math.round(enemy.value * cashBoostMultiplier);
+            money += earnedValue;
+            newFloatingTexts.push({ id: now + Math.random(), x: enemy.x + enemy.width / 2, y: enemy.y, text: `+$${earnedValue}`, startTime: now });
 
             if (enemy.type === EnemyType.Boss) {
                 bossState = 'defeated';
@@ -810,14 +1020,31 @@ const gameReducer = (state: GameState, action: Action): GameState => {
             } else {
                 if (enemy.type !== EnemyType.Splinter) {
                     killCount += 1;
-                    const waveKillGoal = wave * KILLS_PER_WAVE;
-                    if (killCount >= waveKillGoal && bossState === 'none') {
+                    const primaryKillCount = killCount;
+                    const currentWave = Math.floor(primaryKillCount / KILLS_PER_WAVE) + 1;
+
+                    if (currentWave > wave && bossState === 'none') {
+                        // End of wave interest bonus
+                        const interestRate = state.interestLevel * INTEREST_RATE_PER_LEVEL;
+                        const earnedInterest = Math.round(money * interestRate);
+                        if (earnedInterest > 0) {
+                            money += earnedInterest;
+                            newFloatingTexts.push({
+                                id: now + Math.random(),
+                                x: GAME_WIDTH - 80,
+                                y: 50,
+                                text: `+$${earnedInterest} Interest!`,
+                                startTime: now,
+                                color: '#66ff66',
+                            });
+                            moneyGlowTime = now;
+                        }
+
                         if (wave % WAVE_FOR_BOSS === 0) {
                             bossState = 'warning';
                             bossWarningTime = now;
-                        } else {
-                            wave += 1;
                         }
+                        wave = currentWave;
                     }
                 }
             }
@@ -837,23 +1064,73 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       if (spawnedSplinters.length > 0) enemies = [...enemies, ...spawnedSplinters];
       floatingTexts = [...floatingTexts, ...newFloatingTexts];
 
-      // --- PLAYER COLLISION ---
-      for (const enemy of enemies) {
-        if (enemy.isClearing || enemy.hp <= 0) continue;
-        if (intersects(enemy, player) || enemy.y + enemy.height > (GAME_HEIGHT - UPGRADE_BAR_HEIGHT)) {
-          if (shields > 0) { shields -= 1; playerHitTime = now; enemies = enemies.map(e => e.type === EnemyType.Boss ? e : ({ ...e, isClearing: true, phase: undefined })); break; } 
-          else return { ...state, money, shields: 0, status: GameStatus.GameOver };
+      // --- PLAYER COLLISION & BREACH DETECTION ---
+      const breachedEnemyIds = new Set<number>();
+      const newBreachExplosions: BreachExplosion[] = [];
+      let shieldsLost = 0;
+
+      const activeGameEnemies = enemies.filter(e => !e.isClearing && e.hp > 0);
+
+      activeGameEnemies.forEach(enemy => {
+        // Check for breach
+        if (enemy.y + enemy.height > (GAME_HEIGHT - UPGRADE_BAR_HEIGHT)) {
+            breachedEnemyIds.add(enemy.id);
+            shieldsLost++;
+            newBreachExplosions.push({
+                id: now + Math.random(),
+                x: enemy.x + enemy.width / 2,
+                startTime: now,
+            });
         }
-      }
-      for (const projectile of enemyProjectiles) {
-        if (intersects(projectile, player)) {
-            projectile.y = GAME_HEIGHT + 1;
-            if (shields > 0) { shields -= 1; playerHitTime = now; enemies = enemies.map(e => e.type === EnemyType.Boss ? e : ({ ...e, isClearing: true, phase: undefined })); } 
-            else return { ...state, money, shields: 0, status: GameStatus.GameOver };
+      });
+      
+      let playerWasHitByCollision = false;
+      for (const enemy of activeGameEnemies) {
+        if (intersects(enemy, player)) {
+            playerWasHitByCollision = true;
             break; 
         }
       }
 
+      const hitEnemyProjectiles = new Set<number>();
+      let playerWasHitByProjectile = false;
+      for (const projectile of enemyProjectiles) {
+        if (intersects(projectile, player)) {
+            playerWasHitByProjectile = true;
+            hitEnemyProjectiles.add(projectile.id);
+            break;
+        }
+      }
+       if (playerWasHitByProjectile) {
+        enemyProjectiles = enemyProjectiles.filter(p => !hitEnemyProjectiles.has(p.id));
+       }
+
+      if (shieldsLost > 0) {
+        shields -= shieldsLost;
+        breachExplosions = [...breachExplosions, ...newBreachExplosions];
+        enemies = enemies.filter(e => !breachedEnemyIds.has(e.id));
+      }
+
+      if (playerWasHitByCollision || playerWasHitByProjectile) {
+        shields -= 1;
+        if (shields >= 0) {
+            playerHitTime = now;
+            enemies = enemies.map(e => e.type === EnemyType.Boss ? e : ({ ...e, isClearing: true, phase: undefined }));
+            enemyProjectiles = [];
+        }
+      }
+
+      if (shields < 0) {
+        return {
+            ...state, player, enemies, projectiles, enemyProjectiles, stars, particles, breachExplosions,
+            killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts,
+            shields: 0, playerHitTime, leftDrone, rightDrone, homingDrone, leftDroneTargetId,
+            rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime,
+            wave, bossState, bossWarningTime, bossDefeatedTime, moneyGlowTime,
+            status: GameStatus.GameOver,
+        };
+      }
+    
       // --- PLAYER FIRING ---
       const bulletPower = BASE_BULLET_POWER + ((state.bulletPowerLevel -1) * BULLET_POWER_INCREASE_PER_LEVEL);
       const currentFireRate = Math.max(MIN_PROJECTILE_FIRE_RATE, BASE_PROJECTILE_FIRE_RATE - ((state.bulletRateLevel - 1) * FIRE_RATE_DECREASE_PER_LEVEL));
@@ -872,12 +1149,17 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // --- SPAWN HOMING MISSILES ---
       if (state.shipLevel >= 6) {
         const numMissiles = state.shipLevel >= 12 ? 3 : state.shipLevel >= 9 ? 2 : 1;
-        if (now - lastMissileSpawn > (currentFireRate * 3) / numMissiles && activeEnemies.length > 0) {
+        if (now - lastMissileSpawn > (currentFireRate * 3) / numMissiles && visibleEnemies.length > 0) {
             lastMissileSpawn = now;
+            const initialTargetY = GAME_HEIGHT * (1 - HOMING_MISSILE_INITIAL_TARGET_Y_FACTOR);
+            const initialTargetX = Math.random() * GAME_WIDTH;
+            const homingDroneSize = PLAYER_WIDTH * HOMING_DRONE_SCALE;
+
             projectiles.push({
                 id: now + 500 + Math.random(), x: homingDrone.x + homingDroneSize / 2 - HOMING_MISSILE_WIDTH / 2, y: homingDrone.y,
                 width: HOMING_MISSILE_WIDTH, height: HOMING_MISSILE_HEIGHT, power: bulletPower, type: ProjectileType.Homing,
-                targetId: activeEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)).id, angle: -Math.PI / 2,
+                targetId: visibleEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)).id, angle: -Math.PI / 2,
+                phase: 'initialBoost', initialTargetX, initialTargetY, lastParticleSpawn: now,
             });
         }
       }
@@ -898,7 +1180,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         else if (difficultyProgress > 0.2 && random < 0.90) type = EnemyType.Swooper;
         else type = EnemyType.Standard;
         
-        const newEnemy: Enemy = { id: now, x: Math.random() * (GAME_WIDTH - ENEMY_WIDTH), y: -ENEMY_HEIGHT, width: ENEMY_WIDTH, height: ENEMY_HEIGHT, hp, value, color, type };
+        const newEnemy: Enemy = { id: now + Math.random(), x: Math.random() * (GAME_WIDTH - ENEMY_WIDTH), y: -ENEMY_HEIGHT, width: ENEMY_WIDTH, height: ENEMY_HEIGHT, hp, value, color, type };
         if (type === EnemyType.Swooper) { newEnemy.initialX = newEnemy.x; newEnemy.swoopDirection = 1; }
         if (type === EnemyType.Dasher) { newEnemy.phase = 'descending'; }
         if (type === EnemyType.Turret) { newEnemy.phase = 'descending'; newEnemy.hp *= 2; newEnemy.value *= 2; newEnemy.horizontalDirection = Math.random() < 0.5 ? 1 : -1; }
@@ -909,8 +1191,12 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       // --- CLEANUP ---
       floatingTexts = floatingTexts.filter(ft => now - ft.startTime < FLOATING_TEXT_DURATION);
       enemies = enemies.filter(e => e.deathTime ? now - e.deathTime < ENEMY_DEATH_FADE_DURATION : e.isClearing ? e.y + e.height > 0 : true);
+      particles = particles
+        .map(p => ({ ...p, x: p.x + p.vx, y: p.y + p.vy }))
+        .filter(p => now - p.startTime < p.lifespan);
+      breachExplosions = breachExplosions.filter(be => now - be.startTime < BREACH_EFFECT_DURATION);
 
-      return { ...state, player, enemies, projectiles, enemyProjectiles, stars, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, playerHitTime, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime, wave, bossState, bossWarningTime, bossDefeatedTime };
+      return { ...state, player, enemies, projectiles, enemyProjectiles, stars, particles, breachExplosions, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, playerHitTime, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime, wave, bossState, bossWarningTime, bossDefeatedTime, moneyGlowTime };
     }
     default:
       return state;
@@ -937,6 +1223,23 @@ const App: React.FC = () => {
     };
   }, [state.status, gameLoop]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'p' || e.key === 'Escape') {
+            if (state.status === GameStatus.Playing) {
+                dispatch({ type: 'PAUSE_GAME' });
+            } else if (state.status === GameStatus.Paused) {
+                dispatch({ type: 'RESUME_GAME' });
+            }
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+        window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [state.status]);
+
   const startGame = () => dispatch({ type: 'START_GAME' });
   const restartGame = () => dispatch({ type: 'RESTART' });
   const resetGame = () => dispatch({ type: 'RESET_GAME' });
@@ -944,12 +1247,12 @@ const App: React.FC = () => {
   const upgradeBulletPower = () => dispatch({ type: 'UPGRADE_BULLET_POWER' });
   const upgradeShipLevel = () => dispatch({ type: 'UPGRADE_SHIP_LEVEL' });
   const upgradeInterest = () => dispatch({ type: 'UPGRADE_INTEREST' });
+  const upgradeCashBoost = () => dispatch({ type: 'UPGRADE_CASH_BOOST' });
   const upgradeShield = () => dispatch({ type: 'UPGRADE_SHIELD' });
+  const pauseGame = () => dispatch({ type: 'PAUSE_GAME' });
+  const resumeGame = () => dispatch({ type: 'RESUME_GAME' });
 
-  const gameOverUpgradeButtonClasses = "text-xl px-4 py-2 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_10px_#0ff] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cyan-400";
-  const inGameUpgradeButtonClasses = "flex flex-col items-center justify-center gap-1 w-20 h-24 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_8px_#0ff] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cyan-400 text-xs p-1";
-
-  const interestGained = Math.round(state.money * (state.interestLevel * 0.01));
+  const inGameUpgradeButtonClasses = "flex flex-col items-center justify-center gap-1 w-16 h-24 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_8px_#0ff] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-cyan-400 text-xs p-1";
 
   // Drone rendering calculations
   const sideDroneScale = 0.5;
@@ -961,6 +1264,20 @@ const App: React.FC = () => {
   const rightTarget = state.enemies.find(e => e.id === state.rightDroneTargetId);
 
   const boss = state.enemies.find(e => e.type === EnemyType.Boss);
+  
+  // Money glow effect calculation
+  const moneyGlowDuration = 500; // ms
+  const moneyGlowProgress = state.moneyGlowTime > 0 ? (Date.now() - state.moneyGlowTime) / moneyGlowDuration : 1;
+  let moneyStyle: React.CSSProperties = { transition: 'transform 200ms ease-out, color 200ms, text-shadow 200ms' };
+  if (moneyGlowProgress < 1) {
+      const scale = 1 + 0.5 * Math.sin(moneyGlowProgress * Math.PI); // Grow and shrink
+      moneyStyle = {
+          ...moneyStyle,
+          transform: `scale(${scale})`,
+          color: '#66ff66',
+          textShadow: '0 0 8px #6f6, 0 0 12px #6f6',
+      };
+  }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black font-mono text-cyan-400 p-4">
@@ -972,16 +1289,40 @@ const App: React.FC = () => {
         {state.stars.map(star => (
           <div
             key={star.id}
-            className="absolute bg-white rounded-full"
+            className="absolute rounded-full"
             style={{
               left: star.x,
               top: star.y,
               width: star.size,
               height: star.size,
-              opacity: star.size / 3,
+              opacity: (star.size / 3) + (state.bossState === 'fighting' ? 0.1 : 0),
+              backgroundColor: state.bossState === 'fighting' ? '#ffaaaa' : 'white',
+              transition: 'background-color 2s ease',
             }}
           />
         ))}
+
+        {/* Particles */}
+        {state.particles.map(p => {
+            const elapsedTime = Date.now() - p.startTime;
+            const life = Math.min(1, elapsedTime / p.lifespan);
+            const opacity = 1 - life;
+            const size = p.size * (1 - life);
+            return (
+              <div
+                key={p.id}
+                className="absolute rounded-full"
+                style={{
+                  left: p.x - size / 2, top: p.y - size / 2,
+                  width: size, height: size,
+                  backgroundColor: p.color,
+                  opacity: opacity,
+                  boxShadow: `0 0 4px ${p.color}`,
+                  willChange: 'transform, opacity, width, height',
+                }}
+              />
+            );
+        })}
 
         {/* Floating Text */}
         {state.floatingTexts.map(ft => {
@@ -993,12 +1334,13 @@ const App: React.FC = () => {
             return (
               <div
                 key={ft.id}
-                className="absolute text-yellow-400 font-bold text-lg pointer-events-none"
+                className="absolute font-bold text-lg pointer-events-none"
                 style={{
                   left: ft.x,
                   top: currentY,
                   opacity: opacity,
                   transform: 'translateX(-50%)',
+                  color: ft.color || '#facc15', // tailwind yellow-400
                   textShadow: '0 0 5px black, 0 0 8px black',
                   willChange: 'transform, opacity',
                 }}
@@ -1045,6 +1387,11 @@ const App: React.FC = () => {
             {state.playerHitTime > 0 && (
               <PlayerHitExplosion player={state.player} startTime={state.playerHitTime} />
             )}
+            
+            {/* Breach Effects */}
+            {state.breachExplosions.map(be => (
+                <BreachExplosion key={be.id} x={be.x} startTime={be.startTime} />
+            ))}
 
             {/* Enemies */}
             {state.enemies.map(enemy => {
@@ -1117,8 +1464,14 @@ const App: React.FC = () => {
                 <button onClick={upgradeInterest} disabled={state.money < state.interestCost} className={inGameUpgradeButtonClasses}>
                       <InterestIcon />
                       <span className="font-bold">INTEREST</span>
-                    <span>Lvl {state.interestLevel}</span>
+                      <span>Lvl {state.interestLevel} ({state.interestLevel * 5}%)</span>
                       <span className="text-yellow-400">${state.interestCost}</span>
+                </button>
+                <button onClick={upgradeCashBoost} disabled={state.money < state.cashBoostCost} className={inGameUpgradeButtonClasses}>
+                    <CashBoostIcon />
+                    <span className="font-bold">CASH</span>
+                    <span>Lvl {state.cashBoostLevel} ({(state.cashBoostLevel - 1)}%)</span>
+                    <span className="text-yellow-400">${state.cashBoostCost}</span>
                 </button>
                 <button onClick={upgradeShield} disabled={state.money < state.shieldCost} className={inGameUpgradeButtonClasses}>
                       <ShieldIcon />
@@ -1151,27 +1504,8 @@ const App: React.FC = () => {
               <p className="text-2xl">KILLS: {state.killCount}</p>
               <div>
                 <p className="text-3xl font-bold">Total Cash: ${state.money}</p>
-                <p className="text-xl text-green-400">+ ${interestGained} Interest ({state.interestLevel}%)</p>
               </div>
               
-              <div className="w-full space-y-3 mt-2">
-                  <button onClick={upgradeBulletRate} disabled={state.money < state.bulletRateCost} className={gameOverUpgradeButtonClasses}>
-                      Bullet Rate Lvl {state.bulletRateLevel + 1} (${state.bulletRateCost})
-                  </button>
-                  <button onClick={upgradeBulletPower} disabled={state.money < state.bulletPowerCost} className={gameOverUpgradeButtonClasses}>
-                      Bullet Power Lvl {state.bulletPowerLevel + 1} (${state.bulletPowerCost})
-                  </button>
-                  <button onClick={upgradeShipLevel} disabled={state.money < state.shipLevelCost || state.shipLevel >= MAX_SHIP_LEVEL} className={gameOverUpgradeButtonClasses}>
-                    {state.shipLevel >= MAX_SHIP_LEVEL ? 'Ship Level MAX' : `Ship Level ${state.shipLevel + 1} ($${state.shipLevelCost})`}
-                  </button>
-                  <button onClick={upgradeInterest} disabled={state.money < state.interestCost} className={gameOverUpgradeButtonClasses}>
-                      Interest Lvl {state.interestLevel + 1} (${state.interestCost})
-                  </button>
-                  <button onClick={upgradeShield} disabled={state.money < state.shieldCost} className={gameOverUpgradeButtonClasses}>
-                      Shields Lvl {state.shieldLevel + 1} (${state.shieldCost})
-                  </button>
-              </div>
-
               <button onClick={restartGame} className="mt-4 text-2xl px-6 py-3 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_10px_#0ff]">
                 Fight!
               </button>
@@ -1188,6 +1522,21 @@ const App: React.FC = () => {
             )}
         </div>
 
+        {/* Pause Menu */}
+        {state.status === GameStatus.Paused && (
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center gap-6 z-30 pointer-events-auto">
+                <h2 className="text-6xl font-bold text-cyan-400 filter drop-shadow-[0_0_8px_#0ff]">PAUSED</h2>
+                <div className="flex flex-col gap-4">
+                    <button onClick={resumeGame} className="text-2xl px-6 py-3 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_10px_#0ff]">
+                        RESUME
+                    </button>
+                    <button onClick={resetGame} className="text-lg px-4 py-2 text-gray-400 hover:text-red-500 transition-colors">
+                        Reset Game
+                    </button>
+                </div>
+            </div>
+        )}
+
         {/* Score Display */}
         {state.status === GameStatus.Playing && (
           <>
@@ -1195,9 +1544,14 @@ const App: React.FC = () => {
                 <div className="text-2xl font-bold">KILLS: {state.killCount}</div>
                 <div className="text-xl">SHIELDS: {state.shields}</div>
             </div>
-            <div className="absolute top-4 right-4 text-right z-20">
-                <div className="text-2xl font-bold">${state.money}</div>
-                <div className="text-xl">WAVE: {state.bossState === 'defeated' ? state.wave + 1 : state.wave}</div>
+            <div className="absolute top-4 right-4 text-right z-20 flex items-center gap-4">
+                <div>
+                    <div className="text-2xl font-bold" style={moneyStyle}>${state.money}</div>
+                    <div className="text-xl">WAVE: {state.bossState === 'defeated' ? state.wave + 1 : state.wave}</div>
+                </div>
+                <button onClick={pauseGame} className="p-2 text-white hover:text-cyan-400 transition-colors pointer-events-auto" aria-label="Pause Game">
+                    <PauseIcon />
+                </button>
             </div>
             {boss && state.bossState === 'fighting' && <BossHealthBar boss={boss} />}
           </>

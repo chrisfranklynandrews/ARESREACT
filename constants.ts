@@ -28,16 +28,16 @@ export const SPLITTER_VALUE_MULTIPLIER = 2.5;
 export const SPLINTER_COUNT = 4;
 export const SPLINTER_INITIAL_SPEED = 3;
 export const SPLINTER_HP = 1;
-export const SPLINTER_VALUE = 5;
+export const SPLINTER_VALUE = 50;
 export const SPLINTER_WIDTH = 20;
 export const SPLINTER_HEIGHT = 20;
 export const SPLINTER_DRAG = 0.98;
 export const SPLINTER_GRAVITY = 0.05;
 
 export const BASE_ENEMY_HP = 1;
-export const BASE_ENEMY_VALUE = 10;
+export const BASE_ENEMY_VALUE = 100;
 export const MAX_ADDITIONAL_HP = 5; // Max HP will be BASE_ENEMY_HP + MAX_ADDITIONAL_HP
-export const MAX_ADDITIONAL_VALUE = 90; // Max value will be BASE_ENEMY_VALUE + MAX_ADDITIONAL_VALUE
+export const MAX_ADDITIONAL_VALUE = 900; // Max value will be BASE_ENEMY_VALUE + MAX_ADDITIONAL_VALUE
 export const ENEMY_COLORS = ['#f0f', '#ff0000', '#ff8c00', '#ffff00', '#adff2f']; // Magenta -> Red -> Orange -> Yellow -> GreenYellow
 
 export const PROJECTILE_WIDTH = 6;
@@ -52,6 +52,11 @@ export const HOMING_MISSILE_WIDTH = 8;
 export const HOMING_MISSILE_HEIGHT = 16;
 export const HOMING_MISSILE_SPEED = 8;
 export const HOMING_MISSILE_TURN_RATE = 0.1; // radians per tick
+export const HOMING_MISSILE_INITIAL_TARGET_Y_FACTOR = 2/3;
+export const HOMING_MISSILE_PARTICLE_LIFESPAN = 400; // ms
+export const HOMING_MISSILE_PARTICLE_SPAWN_RATE = 25; // ms
+export const HOMING_MISSILE_PARTICLE_SIZE = 4;
+export const HOMING_MISSILE_PARTICLE_SPEED = 1;
 
 export const STAR_COUNT = 100;
 export const STAR_SPEED_MIN = 0.5;
@@ -64,7 +69,7 @@ export const BOSS_WIDTH = 150;
 export const BOSS_HEIGHT = 100;
 export const BOSS_BASE_HP = 500;
 export const BOSS_HP_PER_LOOP = 250;
-export const BOSS_VALUE = 2500;
+export const BOSS_VALUE = 25000;
 export const BOSS_ENTER_Y = 100;
 export const BOSS_HORIZONTAL_SPEED = 2;
 export const BOSS_WARNING_DURATION = 3000; // ms
@@ -76,15 +81,18 @@ export const HOMING_DRONE_SCALE = 0.3;
 export const BASE_PROJECTILE_FIRE_RATE = 1000; // ms (1 per second)
 export const FIRE_RATE_DECREASE_PER_LEVEL = 75; // ms reduction per level
 export const MIN_PROJECTILE_FIRE_RATE = 100; // cap
-export const INITIAL_BULLET_RATE_COST = 50;
+export const INITIAL_BULLET_RATE_COST = 500;
 
 export const BASE_BULLET_POWER = 1;
 export const BULLET_POWER_INCREASE_PER_LEVEL = 1;
-export const INITIAL_BULLET_POWER_COST = 70;
+export const INITIAL_BULLET_POWER_COST = 700;
 
-export const INITIAL_INTEREST_COST = 100;
-export const INITIAL_SHIELD_COST = 150;
-export const INITIAL_SHIP_LEVEL_COST = 200;
+export const INITIAL_INTEREST_COST = 1000;
+export const INTEREST_RATE_PER_LEVEL = 0.05; // 5%
+export const INITIAL_SHIELD_COST = 1500;
+export const INITIAL_SHIP_LEVEL_COST = 2000;
+export const INITIAL_CASH_BOOST_COST = 1200;
+export const CASH_BOOST_PER_LEVEL = 0.01; // 1%
 
 export const UPGRADE_COST_MULTIPLIER = 1.5;
 export const MAX_SHIP_LEVEL = 12;
@@ -97,7 +105,9 @@ export const BEAM_COOLDOWN_DURATION = 1000; // ms
 
 // --- EFFECTS ---
 export const FLOATING_TEXT_DURATION = 800; // ms
+// FIX: Corrected constant casing to UPPER_SNAKE_CASE for consistency.
 export const FLOATING_TEXT_LIFT = 40; // pixels to float up
 export const ENEMY_RECOIL_AMOUNT = 8; // pixels of upward knockback
 export const ENEMY_DEATH_FADE_DURATION = 300; // ms
 export const PLAYER_HIT_EFFECT_DURATION = 400; // ms
+export const BREACH_EFFECT_DURATION = 500; // ms

@@ -1,6 +1,7 @@
 export enum GameStatus {
   Start,
   Playing,
+  Paused,
   GameOver,
 }
 
@@ -67,6 +68,12 @@ export interface Projectile extends PositionedObject {
   type: ProjectileType;
   targetId?: number;
   angle?: number;
+  
+  // Homing missile specific
+  phase?: 'initialBoost' | 'homing';
+  initialTargetX?: number;
+  initialTargetY?: number;
+  lastParticleSpawn?: number;
 }
 
 export interface EnemyProjectile extends PositionedObject {
@@ -89,4 +96,23 @@ export interface FloatingText {
   y: number;
   text: string;
   startTime: number;
+  color?: string;
+}
+
+export interface Particle {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  startTime: number;
+  lifespan: number;
+  color: string;
+}
+
+export interface BreachExplosion {
+    id: number;
+    x: number;
+    startTime: number;
 }
