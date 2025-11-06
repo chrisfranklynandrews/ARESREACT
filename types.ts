@@ -68,6 +68,7 @@ export interface Projectile extends PositionedObject {
   type: ProjectileType;
   targetId?: number;
   angle?: number;
+  color?: string;
   
   // Homing missile specific
   phase?: 'initialBoost' | 'homing';

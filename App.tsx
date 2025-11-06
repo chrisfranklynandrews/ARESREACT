@@ -187,16 +187,17 @@ const EnemyShip: React.FC<{ enemy: Enemy }> = React.memo(({ enemy }) => {
   }
 });
 
-const ProjectileShape: React.FC = React.memo(() => (
-  <div
-    className="border-2 border-cyan-400 rounded-full"
-    style={{ 
-      width: `${PROJECTILE_WIDTH}px`, 
-      height: `${PROJECTILE_HEIGHT}px`,
-      boxShadow: '0 0 6px #0ff, 0 0 10px #0ff'
-    }}
-  />
-));
+const ProjectileShape: React.FC<{ color?: string }> = React.memo(({ color = '#0ff' }) => (
+    <div
+      className="border-2 rounded-full"
+      style={{
+        width: `${PROJECTILE_WIDTH}px`,
+        height: `${PROJECTILE_HEIGHT}px`,
+        borderColor: color,
+        boxShadow: `0 0 6px ${color}, 0 0 10px ${color}`,
+      }}
+    />
+  ));
 
 const EnemyProjectileShape: React.FC = React.memo(() => (
     <div
@@ -438,7 +439,8 @@ type Action =
   | { type: 'UPGRADE_CASH_BOOST' }
   | { type: 'UPGRADE_SHIELD' }
   | { type: 'PAUSE_GAME' }
-  | { type: 'RESUME_GAME' };
+  | { type: 'RESUME_GAME' }
+  | { type: 'MANUAL_FIRE' };
   
 const createInitialRunState = () => {
   const initialPlayer = {
@@ -678,6 +680,43 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 ...p,
                 lastParticleSpawn: p.lastParticleSpawn ? p.lastParticleSpawn + pausedDuration : undefined,
             }))
+        };
+    }
+    case 'MANUAL_FIRE': {
+        if (state.status !== GameStatus.Playing) return state;
+
+        const now = Date.now();
+        const newProjectiles: Projectile[] = [];
+        const bulletPower = (BASE_BULLET_POWER + ((state.bulletPowerLevel - 1) * BULLET_POWER_INCREASE_PER_LEVEL)) / 2;
+        
+        const createProjectile = (x: number, y: number, angle: number): Projectile => ({
+            id: now + Math.random(), 
+            x: x - PROJECTILE_WIDTH / 2, 
+            y: y, 
+            width: PROJECTILE_WIDTH, 
+            height: PROJECTILE_HEIGHT,
+            power: bulletPower, 
+            type: ProjectileType.Standard, 
+            angle,
+            color: '#44aaff', // Blue color for manual shot
+        });
+        
+        const centerX = state.player.x + state.player.width / 2;
+        
+        if (state.shipLevel === 1) {
+            newProjectiles.push(createProjectile(centerX, state.player.y, -Math.PI / 2));
+        } else if (state.shipLevel === 2) {
+            newProjectiles.push(createProjectile(centerX - PLAYER_WIDTH / 3, state.player.y, -Math.PI / 2));
+            newProjectiles.push(createProjectile(centerX + PLAYER_WIDTH / 3, state.player.y, -Math.PI / 2));
+        } else if (state.shipLevel >= 3) {
+            newProjectiles.push(createProjectile(centerX, state.player.y, -Math.PI / 2));
+            newProjectiles.push(createProjectile(centerX - PLAYER_WIDTH / 2.5, state.player.y, -Math.PI / 2));
+            newProjectiles.push(createProjectile(centerX + PLAYER_WIDTH / 2.5, state.player.y, -Math.PI / 2));
+        }
+        
+        return {
+            ...state,
+            projectiles: [...state.projectiles, ...newProjectiles],
         };
     }
     case 'TICK': {
@@ -1169,10 +1208,21 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       const currentEnemySpawnRate = INITIAL_ENEMY_SPAWN_RATE - (INITIAL_ENEMY_SPAWN_RATE - MIN_ENEMY_SPAWN_RATE) * difficultyProgress;
       if (now - lastEnemySpawn > currentEnemySpawnRate && bossState === 'none') {
         lastEnemySpawn = now;
-        const additionalHp = Math.floor(difficultyProgress * MAX_ADDITIONAL_HP);
-        const hp = BASE_ENEMY_HP + additionalHp;
+        
+        // New logic for gradual difficulty increase
+        const rawHpLevel = difficultyProgress * MAX_ADDITIONAL_HP;
+        const baseHpLevel = Math.floor(rawHpLevel);
+        const transitionProgress = rawHpLevel - baseHpLevel;
+        
+        let chosenHpLevel = baseHpLevel;
+        if (Math.random() < transitionProgress) {
+            chosenHpLevel = Math.min(baseHpLevel + 1, MAX_ADDITIONAL_HP);
+        }
+
+        const hp = BASE_ENEMY_HP + chosenHpLevel;
+        const color = ENEMY_COLORS[Math.min(chosenHpLevel, ENEMY_COLORS.length - 1)];
         const value = BASE_ENEMY_VALUE + Math.floor(difficultyProgress * MAX_ADDITIONAL_VALUE);
-        const color = ENEMY_COLORS[Math.min(additionalHp, ENEMY_COLORS.length - 1)];
+
         let type: EnemyType; const random = Math.random();
         if (difficultyProgress > 0.6 && random < 0.15) type = EnemyType.Splitter;
         else if (difficultyProgress > 0.4 && random < 0.40) type = EnemyType.Turret;
@@ -1240,6 +1290,17 @@ const App: React.FC = () => {
     };
   }, [state.status]);
 
+  const handleManualFire = useCallback((event: React.PointerEvent) => {
+    // Fire only if the click is on the background, not UI elements.
+    if (event.target !== event.currentTarget) {
+        return;
+    }
+    event.preventDefault();
+    if (state.status === GameStatus.Playing) {
+      dispatch({ type: 'MANUAL_FIRE' });
+    }
+  }, [state.status]);
+
   const startGame = () => dispatch({ type: 'START_GAME' });
   const restartGame = () => dispatch({ type: 'RESTART' });
   const resetGame = () => dispatch({ type: 'RESET_GAME' });
@@ -1282,8 +1343,9 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black font-mono text-cyan-400 p-4">
       <div
-        className="relative bg-black overflow-hidden border-2 border-cyan-400/50 shadow-[0_0_20px_#0ff]"
+        className="relative bg-black overflow-hidden border-2 border-cyan-400/50 shadow-[0_0_20px_#0ff] cursor-pointer"
         style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}
+        onPointerDown={handleManualFire}
       >
         {/* Stars */}
         {state.stars.map(star => (
@@ -1426,7 +1488,7 @@ const App: React.FC = () => {
             {/* Projectiles */}
             {state.projectiles.map(p => (
               <div key={p.id} className="absolute" style={{ left: p.x, top: p.y }}>
-                 {p.type === ProjectileType.Homing ? <MissileShape angle={p.angle ?? 0} /> : <ProjectileShape />}
+                 {p.type === ProjectileType.Homing ? <MissileShape angle={p.angle ?? 0} /> : <ProjectileShape color={p.color} />}
               </div>
             ))}
             
