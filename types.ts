@@ -1,5 +1,7 @@
 export enum GameStatus {
+  WelcomeBack,
   Start,
+  Tutorial,
   Playing,
   Paused,
   GameOver,
@@ -12,12 +14,21 @@ export enum EnemyType {
   Turret,
   Splitter,
   Splinter,
+  Charger,
+  Weaver,
+  Guardian,
   Boss,
 }
 
 export enum ProjectileType {
   Standard,
   Homing,
+}
+
+export enum EnemyProjectileType {
+    Standard,
+    Mine,
+    Burst,
 }
 
 // A generic object with position and dimensions
@@ -40,18 +51,19 @@ export interface Enemy extends PositionedObject {
   isClearing?: boolean;
   recoil?: number;
   deathTime?: number;
+  isTutorial?: boolean; // Tutorial enemy flag
 
-  // Swooper-specific
+  // Swooper & Weaver-specific
   initialX?: number;
   swoopDirection?: 1 | -1;
 
-  // Dasher & Turret & Boss-specific
-  phase?: 'descending' | 'pausing' | 'dashing' | 'active' | 'entering' | 'phase1' | 'phase2' | 'dying';
+  // Dasher & Turret & Boss & Charger-specific
+  phase?: 'descending' | 'pausing' | 'dashing' | 'active' | 'entering' | 'phase1' | 'phase2' | 'dying' | 'charging' | 'rushing';
   dashTargetX?: number;
   pauseTime?: number;
 
-  // Turret & Boss-specific
-  lastFired?: number;
+  // Turret & Boss & Weaver-specific
+  lastFired?: number; // Repurposed for Weaver mines
   horizontalDirection?: 1 | -1;
   attackCooldown?: number;
   attackTimer?: number;
@@ -60,6 +72,10 @@ export interface Enemy extends PositionedObject {
   // Splinter-specific
   vx?: number;
   vy?: number;
+  
+  // Guardian-specific
+  shieldHp?: number;
+  maxShieldHp?: number;
 }
 
 export interface Projectile extends PositionedObject {
@@ -81,6 +97,7 @@ export interface EnemyProjectile extends PositionedObject {
   id: number;
   vx?: number;
   vy?: number;
+  projectileType?: EnemyProjectileType;
 }
 
 export interface Star {

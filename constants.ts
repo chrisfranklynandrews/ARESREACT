@@ -34,6 +34,23 @@ export const SPLINTER_HEIGHT = 20;
 export const SPLINTER_DRAG = 0.98;
 export const SPLINTER_GRAVITY = 0.05;
 
+// --- New Enemy Type Constants ---
+export const CHARGER_STOP_Y = 100;
+export const CHARGER_CHARGE_DURATION = 750; // ms
+export const CHARGER_RUSH_SPEED = 15;
+
+export const WEAVER_AMPLITUDE = 120;
+export const WEAVER_FREQUENCY = 0.008;
+export const WEAVER_MINE_RATE = 1500; // ms
+export const WEAVER_MINE_SPEED = 1.5;
+export const WEAVER_MINE_WIDTH = 12;
+export const WEAVER_MINE_HEIGHT = 12;
+
+export const GUARDIAN_STOP_Y = 250;
+export const GUARDIAN_BASE_SHIELD_HP = 5;
+export const GUARDIAN_DEATH_BURST_COUNT = 8;
+// --- End New Enemy Type Constants ---
+
 export const BASE_ENEMY_HP = 1;
 export const BASE_ENEMY_VALUE = 100;
 export const MAX_ADDITIONAL_HP = 5; // Max HP will be BASE_ENEMY_HP + MAX_ADDITIONAL_HP
@@ -111,3 +128,6 @@ export const ENEMY_RECOIL_AMOUNT = 8; // pixels of upward knockback
 export const ENEMY_DEATH_FADE_DURATION = 300; // ms
 export const PLAYER_HIT_EFFECT_DURATION = 400; // ms
 export const BREACH_EFFECT_DURATION = 500; // ms
+
+// --- PERSISTENCE ---
+export const LOCAL_STORAGE_KEY = 'ares_save_game';

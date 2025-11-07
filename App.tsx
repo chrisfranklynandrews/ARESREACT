@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useReducer, useRef } from 'react';
-import { GameStatus, Player, Enemy, Projectile, Star, FloatingText, EnemyType, ProjectileType, EnemyProjectile, Particle, BreachExplosion } from './types';
+import { GameStatus, Player, Enemy, Projectile, Star, FloatingText, EnemyType, ProjectileType, EnemyProjectile, Particle, BreachExplosion, EnemyProjectileType } from './types';
 import {
   GAME_WIDTH,
   GAME_HEIGHT,
@@ -85,6 +85,7 @@ import {
   BOSS_DEFEATED_DURATION,
   BOSS_HP_PER_LOOP,
   HOMING_MISSILE_INITIAL_TARGET_Y_FACTOR,
+  // FIX: Corrected constant casing to UPPER_SNAKE_CASE.
   HOMING_MISSILE_PARTICLE_SPAWN_RATE,
   HOMING_MISSILE_PARTICLE_LIFESPAN,
   HOMING_MISSILE_PARTICLE_SPEED,
@@ -92,15 +93,45 @@ import {
   BREACH_EFFECT_DURATION,
   INITIAL_CASH_BOOST_COST,
   CASH_BOOST_PER_LEVEL,
+  LOCAL_STORAGE_KEY,
+  CHARGER_STOP_Y,
+  CHARGER_CHARGE_DURATION,
+  CHARGER_RUSH_SPEED,
+  WEAVER_AMPLITUDE,
+  WEAVER_FREQUENCY,
+  WEAVER_MINE_RATE,
+  WEAVER_MINE_SPEED,
+  WEAVER_MINE_WIDTH,
+  WEAVER_MINE_HEIGHT,
+  GUARDIAN_STOP_Y,
+  GUARDIAN_BASE_SHIELD_HP,
+  GUARDIAN_DEATH_BURST_COUNT,
 } from './constants';
 
 // --- VISUAL COMPONENTS ---
 
-const PlayerShip: React.FC = React.memo(() => (
-  <svg width={PLAYER_WIDTH} height={PLAYER_HEIGHT} viewBox="0 0 100 100" className="filter drop-shadow-[0_0_8px_rgba(0,255,255,0.9)] drop-shadow-[0_0_12px_rgba(0,255,255,0.5)]">
-    <polygon points="50,10 90,90 10,90" stroke="#0ff" strokeWidth="8" fill="none" strokeLinejoin="round" />
-  </svg>
-));
+const PlayerShip: React.FC = React.memo(() => {
+    const shipPath = "50,5 65,20 80,50 85,85 85,100 70,100 70,85 55,90 50,95 45,90 30,85 30,100 15,100 15,85 20,50 35,20";
+
+    return (
+        <svg width={PLAYER_WIDTH} height={PLAYER_HEIGHT} viewBox="0 0 100 100" className="overflow-visible">
+            {/* Layer 1: Red Thruster Glows (Bottom) */}
+            <g className="filter drop-shadow-[0_0_6px_rgba(255,50,50,1)] drop-shadow-[0_0_10px_rgba(255,0,0,0.7)] animate-pulse">
+                <polygon points="46,94 50,102 54,94" fill="#ef4444" />
+                <rect x="18" y="95" width="10" height="7" fill="#ef4444" rx="2" />
+                <rect x="72" y="95" width="10" height="7" fill="#ef4444" rx="2" />
+            </g>
+
+            {/* Layer 2: Cyan Glowing Outline (Middle) */}
+            <g className="filter drop-shadow-[0_0_8px_rgba(0,255,255,0.9)] drop-shadow-[0_0_12px_rgba(0,255,255,0.5)]">
+                <polygon points={shipPath} stroke="#0ff" strokeWidth="8" fill="none" strokeLinejoin="round" />
+            </g>
+
+            {/* Layer 3: Black Ship Body Fill (Top) */}
+            <polygon points={shipPath} fill="black" stroke="none" />
+        </svg>
+    );
+});
 
 const HomingDroneShape: React.FC = React.memo(() => (
     <svg width={PLAYER_WIDTH * HOMING_DRONE_SCALE} height={PLAYER_WIDTH * HOMING_DRONE_SCALE} viewBox="0 0 100 100" className="filter drop-shadow-[0_0_8px_rgba(0,255,255,0.9)] drop-shadow-[0_0_12px_rgba(0,255,255,0.5)]">
@@ -156,6 +187,30 @@ const SplinterEnemyShip: React.FC<{ color: string; style: React.CSSProperties }>
     </svg>
 ));
 
+const ChargerEnemyShip: React.FC<{ color: string; style: React.CSSProperties; phase?: string }> = React.memo(({ color, style, phase }) => {
+    const isCharging = phase === 'charging';
+    return (
+        <svg width={ENEMY_WIDTH} height={ENEMY_HEIGHT * 1.2} viewBox="0 0 100 120" style={style}>
+            <polygon points="50,120 10,10 90,10" stroke={color} strokeWidth="8" fill="none" strokeLinejoin="round" />
+            {isCharging && <circle cx="50" cy="50" r="15" fill={color} className="animate-pulse" />}
+        </svg>
+    );
+});
+
+const WeaverEnemyShip: React.FC<{ color: string; style: React.CSSProperties }> = React.memo(({ color, style }) => (
+    <svg width={ENEMY_WIDTH * 1.2} height={ENEMY_HEIGHT} viewBox="0 0 120 100" style={style}>
+        <polygon points="10,50 40,15 80,85 110,50 80,15 40,85" stroke={color} strokeWidth="8" fill="none" strokeLinejoin="round" />
+    </svg>
+));
+
+const GuardianEnemyShip: React.FC<{ color: string; style: React.CSSProperties }> = React.memo(({ color, style }) => (
+    <svg width={ENEMY_WIDTH * 1.3} height={ENEMY_HEIGHT * 1.3} viewBox="0 0 130 130" style={style}>
+        <polygon points="65,10 120,35 120,95 65,120 10,95 10,35" stroke={color} strokeWidth="8" fill="none" strokeLinejoin="round" />
+        <polygon points="65,30 100,47 100,83 65,100 30,83 30,47" stroke={color} strokeWidth="5" fill="none" strokeLinejoin="round" />
+    </svg>
+));
+
+
 const BossShip: React.FC<{ color: string; style: React.CSSProperties }> = React.memo(({ color, style }) => (
     <svg width={BOSS_WIDTH} height={BOSS_HEIGHT} viewBox="0 0 150 100" style={style}>
       <polygon points="75,10 140,40 120,95 30,95 10,40" stroke={color} strokeWidth="6" fill="none" strokeLinejoin="round" />
@@ -165,6 +220,30 @@ const BossShip: React.FC<{ color: string; style: React.CSSProperties }> = React.
     </svg>
 ));
   
+const GuardianShieldStandalone: React.FC<{ enemy: Enemy }> = React.memo(({ enemy }) => {
+    if (!enemy.shieldHp || enemy.shieldHp <= 0) return null;
+    const opacity = (enemy.shieldHp / (enemy.maxShieldHp ?? 1)) * 0.5 + 0.2;
+    const shieldWidth = enemy.width * 1.5;
+    const shieldHeight = enemy.height * 1.5;
+    return (
+        <div className="absolute" style={{
+            left: (enemy.width - shieldWidth) / 2,
+            top: (enemy.height - shieldHeight) / 2,
+            width: shieldWidth,
+            height: shieldHeight,
+        }}>
+            <svg viewBox="0 0 100 100" className="filter drop-shadow-[0_0_8px_rgba(100,200,255,0.9)] w-full h-full">
+                <polygon
+                    points="50,0 100,25 100,75 50,100 0,75 0,25"
+                    fill={`rgba(100, 200, 255, ${opacity})`}
+                    stroke="#87CEFA"
+                    strokeWidth="4"
+                />
+            </svg>
+        </div>
+    );
+});
+
 
 const EnemyShip: React.FC<{ enemy: Enemy }> = React.memo(({ enemy }) => {
   const style = createDropShadowStyle(enemy.color);
@@ -179,6 +258,12 @@ const EnemyShip: React.FC<{ enemy: Enemy }> = React.memo(({ enemy }) => {
         return <SplitterEnemyShip color={enemy.color} style={style} />;
     case EnemyType.Splinter:
         return <SplinterEnemyShip color={enemy.color} style={style} />;
+    case EnemyType.Charger:
+        return <ChargerEnemyShip color={enemy.color} style={style} phase={enemy.phase} />;
+    case EnemyType.Weaver:
+        return <WeaverEnemyShip color={enemy.color} style={style} />;
+    case EnemyType.Guardian:
+        return <GuardianEnemyShip color={enemy.color} style={style} />;
     case EnemyType.Boss:
         return <BossShip color={enemy.color} style={style} />;
     case EnemyType.Standard:
@@ -209,6 +294,17 @@ const EnemyProjectileShape: React.FC = React.memo(() => (
       }}
     />
   ));
+
+const WeaverMineShape: React.FC = React.memo(() => (
+    <div
+      className="rounded-full bg-purple-500 animate-pulse"
+      style={{ 
+        width: `${WEAVER_MINE_WIDTH}px`, 
+        height: `${WEAVER_MINE_HEIGHT}px`,
+        boxShadow: '0 0 6px #a855f7, 0 0 10px #a855f7' // tailwind purple-500
+      }}
+    />
+));
 
 const MissileShape: React.FC<{ angle: number }> = React.memo(({ angle }) => (
     <div
@@ -408,6 +504,7 @@ type GameState = {
   bossWarningTime: number;
   bossDefeatedTime: number;
   pauseStartTime?: number;
+  tutorialStep: number;
 
   // Persistent state
   money: number;
@@ -427,6 +524,8 @@ type GameState = {
 };
 
 type Action =
+  | { type: 'START_TUTORIAL' }
+  | { type: 'ADVANCE_TUTORIAL' }
   | { type: 'START_GAME' }
   | { type: 'GAME_OVER' }
   | { type: 'RESTART' }
@@ -440,7 +539,22 @@ type Action =
   | { type: 'UPGRADE_SHIELD' }
   | { type: 'PAUSE_GAME' }
   | { type: 'RESUME_GAME' }
-  | { type: 'MANUAL_FIRE' };
+  | { type: 'MANUAL_FIRE' }
+  | { type: 'CONTINUE_FROM_SAVE' };
+
+type PersistentState = Pick<GameState,
+  'money' | 'bulletRateLevel' | 'bulletPowerLevel' | 'shipLevel' | 'interestLevel' |
+  'cashBoostLevel' | 'shieldLevel' | 'bulletRateCost' | 'bulletPowerCost' |
+  'shipLevelCost' | 'interestCost' | 'cashBoostCost' | 'shieldCost'
+>;
+
+const saveGame = (state: PersistentState) => {
+    try {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+        console.error("Failed to save game state:", e);
+    }
+};
   
 const createInitialRunState = () => {
   const initialPlayer = {
@@ -506,7 +620,7 @@ const createInitialState = (): GameState => {
     speed: Math.random() * (STAR_SPEED_MAX - STAR_SPEED_MIN) + STAR_SPEED_MIN,
   }));
 
-  return {
+  const baseState: GameState = {
     status: GameStatus.Start,
     ...createInitialRunState(),
     stars,
@@ -525,7 +639,25 @@ const createInitialState = (): GameState => {
     interestCost: INITIAL_INTEREST_COST,
     cashBoostCost: INITIAL_CASH_BOOST_COST,
     shieldCost: INITIAL_SHIELD_COST,
+    tutorialStep: 0,
   };
+
+  try {
+    const savedStateJSON = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (savedStateJSON) {
+      const savedState: PersistentState = JSON.parse(savedStateJSON);
+      return {
+        ...baseState,
+        ...savedState,
+        status: GameStatus.WelcomeBack,
+      };
+    }
+  } catch (e) {
+    console.error("Failed to load saved game:", e);
+    localStorage.removeItem(LOCAL_STORAGE_KEY);
+  }
+
+  return baseState;
 };
 
 const intersects = (a: {x:number, y:number, width:number, height:number}, b: {x:number, y:number, width:number, height:number}) => {
@@ -534,11 +666,40 @@ const intersects = (a: {x:number, y:number, width:number, height:number}, b: {x:
 
 const gameReducer = (state: GameState, action: Action): GameState => {
   switch (action.type) {
+    case 'START_TUTORIAL':
+      return {
+        ...state,
+        status: GameStatus.Tutorial,
+        tutorialStep: 0,
+      };
+    case 'ADVANCE_TUTORIAL': {
+      const nextStep = state.tutorialStep + 1;
+      let newState = { ...state, tutorialStep: nextStep };
+      if (nextStep === 2) {
+        // Spawn tutorial enemy
+        const tutorialEnemy: Enemy = {
+          id: Date.now(),
+          x: GAME_WIDTH / 2 - ENEMY_WIDTH / 2,
+          y: 200,
+          width: ENEMY_WIDTH,
+          height: ENEMY_HEIGHT,
+          hp: 3,
+          value: 500,
+          color: ENEMY_COLORS[0],
+          type: EnemyType.Standard,
+          isTutorial: true,
+        };
+        newState.enemies = [tutorialEnemy];
+      }
+      return newState;
+    }
     case 'START_GAME': {
       const now = Date.now();
       return {
         ...state,
         status: GameStatus.Playing,
+        enemies: [], // Clear tutorial enemies
+        tutorialStep: 999, // Ensure tutorial doesn't trigger again
         lastEnemySpawn: now,
         lastProjectileSpawn: now,
         lastMissileSpawn: now,
@@ -577,6 +738,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         ...persistentState,
         ...createInitialRunState(),
         status: GameStatus.Playing,
+        tutorialStep: 999,
         gameStartTime: now,
         lastEnemySpawn: now,
         lastProjectileSpawn: now,
@@ -587,14 +749,34 @@ const gameReducer = (state: GameState, action: Action): GameState => {
       };
     }
     case 'RESET_GAME':
+      localStorage.removeItem(LOCAL_STORAGE_KEY);
       return createInitialState();
+    case 'CONTINUE_FROM_SAVE': {
+        const now = Date.now();
+        return {
+          ...state,
+          status: GameStatus.Playing,
+          tutorialStep: 999,
+          lastEnemySpawn: now,
+          lastProjectileSpawn: now,
+          lastMissileSpawn: now,
+          gameStartTime: now,
+          shields: state.shieldLevel,
+          leftDroneState: 'firing',
+          rightDroneState: 'firing',
+          leftDroneStateTime: now,
+          rightDroneStateTime: now,
+        };
+    }
     case 'UPGRADE_BULLET_RATE': {
       if (state.money < state.bulletRateCost) return state;
+      const tutorialAdvancing = state.status === GameStatus.Tutorial && state.tutorialStep === 4;
       return {
         ...state,
         money: state.money - state.bulletRateCost,
         bulletRateLevel: state.bulletRateLevel + 1,
         bulletRateCost: Math.floor(state.bulletRateCost * UPGRADE_COST_MULTIPLIER),
+        tutorialStep: tutorialAdvancing ? state.tutorialStep + 1 : state.tutorialStep,
       };
     }
     case 'UPGRADE_BULLET_POWER': {
@@ -643,9 +825,10 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
       }
     case 'PAUSE_GAME':
+        if (state.status !== GameStatus.Playing) return state;
         return { ...state, status: GameStatus.Paused, pauseStartTime: Date.now() };
     case 'RESUME_GAME': {
-        if (!state.pauseStartTime) return state; // Should not happen
+        if (state.status !== GameStatus.Paused || !state.pauseStartTime) return state;
         const now = Date.now();
         const pausedDuration = now - state.pauseStartTime;
 
@@ -683,11 +866,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'MANUAL_FIRE': {
-        if (state.status !== GameStatus.Playing) return state;
+        if (state.status !== GameStatus.Playing && state.status !== GameStatus.Tutorial) return state;
 
         const now = Date.now();
         const newProjectiles: Projectile[] = [];
-        const bulletPower = (BASE_BULLET_POWER + ((state.bulletPowerLevel - 1) * BULLET_POWER_INCREASE_PER_LEVEL)) / 2;
+        const bulletPower = (BASE_BULLET_POWER + ((state.bulletPowerLevel - 1) * BULLET_POWER_INCREASE_PER_LEVEL));
         
         const createProjectile = (x: number, y: number, angle: number): Projectile => ({
             id: now + Math.random(), 
@@ -720,12 +903,23 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         };
     }
     case 'TICK': {
-      if (state.status !== GameStatus.Playing) return state;
+      if (state.status !== GameStatus.Playing && state.status !== GameStatus.Tutorial) return state;
 
       const now = Date.now();
       let { player, enemies, projectiles, enemyProjectiles, stars, particles, breachExplosions, killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts, shields, leftDrone, rightDrone, homingDrone, leftDroneTargetId, rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime, wave, bossState, bossWarningTime, bossDefeatedTime, moneyGlowTime } = { ...state };
       let playerHitTime = state.playerHitTime;
       const newFloatingTexts: FloatingText[] = [];
+
+      // --- TUTORIAL LOGIC ---
+      if (state.status === GameStatus.Tutorial) {
+        if (state.tutorialStep === 2) {
+            const tutorialEnemy = enemies.find(e => e.isTutorial);
+            if (tutorialEnemy && tutorialEnemy.hp <= 0) {
+                // Enemy killed, advance tutorial
+                return { ...state, tutorialStep: 3, money: state.money + tutorialEnemy.value };
+            }
+        }
+      }
 
       // --- BOSS STATE MACHINE ---
       if (bossState === 'warning' && now - bossWarningTime > BOSS_WARNING_DURATION) {
@@ -753,7 +947,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // --- PLAYER & DRONE MOVEMENT ---
       let playerTargetX: number;
-      if (visibleEnemies.length > 0) {
+      if (visibleEnemies.length > 0 && state.status !== GameStatus.Tutorial) {
         const targetEnemy = visibleEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest));
         playerTargetX = targetEnemy.x + targetEnemy.width / 2 - player.width / 2;
       } else {
@@ -867,120 +1061,193 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           }
         }
       
-        // 2. Then apply movement based on type
-        switch (updatedEnemy.type) {
-          case EnemyType.Swooper: {
-            const newY = updatedEnemy.y + ENEMY_SPEED;
-            const newX = (updatedEnemy.initialX ?? updatedEnemy.x) + Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE * (updatedEnemy.swoopDirection ?? 1);
-            updatedEnemy.x = newX;
-            updatedEnemy.y = newY;
-            break;
-          }
-          case EnemyType.Dasher: {
-            if (updatedEnemy.phase === 'descending') {
-              updatedEnemy.y += ENEMY_SPEED;
-              if (updatedEnemy.y >= DASHER_PAUSE_Y) {
-                updatedEnemy.y = DASHER_PAUSE_Y;
-                updatedEnemy.phase = 'pausing';
-                updatedEnemy.pauseTime = now;
+        if (state.status === GameStatus.Playing) {
+          // 2. Then apply movement based on type
+          switch (updatedEnemy.type) {
+            case EnemyType.Swooper: {
+              const newY = updatedEnemy.y + ENEMY_SPEED;
+              let newX = (updatedEnemy.initialX ?? updatedEnemy.x) + Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE * (updatedEnemy.swoopDirection ?? 1);
+
+              if (newX <= 0 || newX + updatedEnemy.width >= GAME_WIDTH) {
+                updatedEnemy.swoopDirection = ((updatedEnemy.swoopDirection ?? 1) * -1) as 1 | -1;
+                newX = Math.max(0, Math.min(newX, GAME_WIDTH - updatedEnemy.width));
+                const sineOffset = Math.sin(newY * SWOOPER_FREQUENCY) * SWOOPER_AMPLITUDE * updatedEnemy.swoopDirection;
+                updatedEnemy.initialX = newX - sineOffset;
               }
-            } else if (updatedEnemy.phase === 'pausing') {
-              if (now - (updatedEnemy.pauseTime ?? 0) > DASHER_PAUSE_DURATION) {
-                updatedEnemy.phase = 'dashing';
-                updatedEnemy.dashTargetX = player.x;
-              }
-            } else if (updatedEnemy.phase === 'dashing') {
-              const angle = Math.atan2(GAME_HEIGHT - updatedEnemy.y, (updatedEnemy.dashTargetX ?? updatedEnemy.x) - updatedEnemy.x);
-              updatedEnemy.x += Math.cos(angle) * DASHER_DASH_SPEED;
-              updatedEnemy.y += Math.sin(angle) * DASHER_DASH_SPEED;
+
+              updatedEnemy.x = newX;
+              updatedEnemy.y = newY;
+              break;
             }
-            break;
-          }
-          case EnemyType.Turret: {
-            if (updatedEnemy.phase === 'descending') {
-              updatedEnemy.y += ENEMY_SPEED / 2;
-              if (updatedEnemy.y >= TURRET_STOP_Y) {
-                updatedEnemy.y = TURRET_STOP_Y;
-                updatedEnemy.phase = 'active';
-                updatedEnemy.lastFired = now;
+            case EnemyType.Dasher: {
+              if (updatedEnemy.phase === 'descending') {
+                updatedEnemy.y += ENEMY_SPEED;
+                if (updatedEnemy.y >= DASHER_PAUSE_Y) {
+                  updatedEnemy.y = DASHER_PAUSE_Y;
+                  updatedEnemy.phase = 'pausing';
+                  updatedEnemy.pauseTime = now;
+                }
+              } else if (updatedEnemy.phase === 'pausing') {
+                if (now - (updatedEnemy.pauseTime ?? 0) > DASHER_PAUSE_DURATION) {
+                  updatedEnemy.phase = 'dashing';
+                  updatedEnemy.dashTargetX = player.x;
+                }
+              } else if (updatedEnemy.phase === 'dashing') {
+                const angle = Math.atan2(GAME_HEIGHT - updatedEnemy.y, (updatedEnemy.dashTargetX ?? updatedEnemy.x) - updatedEnemy.x);
+                updatedEnemy.x += Math.cos(angle) * DASHER_DASH_SPEED;
+                updatedEnemy.y += Math.sin(angle) * DASHER_DASH_SPEED;
               }
-            } else if (updatedEnemy.phase === 'active') {
-              updatedEnemy.horizontalDirection = updatedEnemy.horizontalDirection ?? 1;
-              updatedEnemy.x += TURRET_HORIZONTAL_SPEED * updatedEnemy.horizontalDirection;
-              if (updatedEnemy.x <= 0 || updatedEnemy.x >= GAME_WIDTH - updatedEnemy.width) {
-                updatedEnemy.horizontalDirection *= -1;
-              }
-              if (now - (updatedEnemy.lastFired ?? 0) > TURRET_FIRE_RATE) {
-                updatedEnemy.lastFired = now;
-                newEnemyProjectiles.push({
-                  id: now + Math.random(),
-                  x: updatedEnemy.x + updatedEnemy.width / 2 - ENEMY_PROJECTILE_WIDTH / 2,
-                  y: updatedEnemy.y + updatedEnemy.height,
-                  width: ENEMY_PROJECTILE_WIDTH,
-                  height: ENEMY_PROJECTILE_HEIGHT,
-                  vx: 0,
-                  vy: ENEMY_PROJECTILE_SPEED,
-                });
-              }
+              break;
             }
-            break;
-          }
-          case EnemyType.Splinter: {
-            const vx = (updatedEnemy.vx ?? 0) * SPLINTER_DRAG;
-            const vy = ((updatedEnemy.vy ?? 0) * SPLINTER_DRAG) + SPLINTER_GRAVITY;
-            updatedEnemy.x += vx;
-            updatedEnemy.y += vy;
-            updatedEnemy.vx = vx;
-            updatedEnemy.vy = vy;
-            break;
-          }
-          case EnemyType.Boss: {
-            if (updatedEnemy.phase === 'entering') {
-              updatedEnemy.y += ENEMY_SPEED / 2;
-              if (updatedEnemy.y >= BOSS_ENTER_Y) {
-                updatedEnemy.y = BOSS_ENTER_Y;
-                updatedEnemy.phase = 'phase1';
-                updatedEnemy.attackTimer = now;
+            case EnemyType.Turret: {
+              if (updatedEnemy.phase === 'descending') {
+                updatedEnemy.y += ENEMY_SPEED / 2;
+                if (updatedEnemy.y >= TURRET_STOP_Y) {
+                  updatedEnemy.y = TURRET_STOP_Y;
+                  updatedEnemy.phase = 'active';
+                  updatedEnemy.lastFired = now;
+                }
+              } else if (updatedEnemy.phase === 'active') {
+                updatedEnemy.horizontalDirection = updatedEnemy.horizontalDirection ?? 1;
+                updatedEnemy.x += TURRET_HORIZONTAL_SPEED * updatedEnemy.horizontalDirection;
+                if (updatedEnemy.x <= 0 || updatedEnemy.x >= GAME_WIDTH - updatedEnemy.width) {
+                  updatedEnemy.horizontalDirection *= -1;
+                }
+                if (now - (updatedEnemy.lastFired ?? 0) > TURRET_FIRE_RATE) {
+                  updatedEnemy.lastFired = now;
+                  newEnemyProjectiles.push({
+                    id: now + Math.random(),
+                    x: updatedEnemy.x + updatedEnemy.width / 2 - ENEMY_PROJECTILE_WIDTH / 2,
+                    y: updatedEnemy.y + updatedEnemy.height,
+                    width: ENEMY_PROJECTILE_WIDTH,
+                    height: ENEMY_PROJECTILE_HEIGHT,
+                    vx: 0,
+                    vy: ENEMY_PROJECTILE_SPEED,
+                    projectileType: EnemyProjectileType.Standard,
+                  });
+                }
               }
-            } else if (updatedEnemy.phase === 'phase1' || updatedEnemy.phase === 'phase2') {
-              updatedEnemy.horizontalDirection = updatedEnemy.horizontalDirection ?? 1;
-              updatedEnemy.x += BOSS_HORIZONTAL_SPEED * updatedEnemy.horizontalDirection;
-              if (updatedEnemy.x <= 0 || updatedEnemy.x >= GAME_WIDTH - updatedEnemy.width) {
-                updatedEnemy.horizontalDirection *= -1;
+              break;
+            }
+            case EnemyType.Splinter: {
+              let vx = (updatedEnemy.vx ?? 0) * SPLINTER_DRAG;
+              const vy = ((updatedEnemy.vy ?? 0) * SPLINTER_DRAG) + SPLINTER_GRAVITY;
+              
+              const nextX = updatedEnemy.x + vx;
+              if (nextX <= 0 || nextX + updatedEnemy.width >= GAME_WIDTH) {
+                vx *= -1;
               }
-              if (updatedEnemy.hp < (updatedEnemy.maxHp ?? 0) / 2 && updatedEnemy.phase === 'phase1') {
-                updatedEnemy.phase = 'phase2';
-              }
-      
-              const cooldown = updatedEnemy.phase === 'phase2' ? 800 : 1500;
-              if (now - (updatedEnemy.attackTimer ?? 0) > cooldown) {
-                updatedEnemy.attackTimer = now;
-                updatedEnemy.attackPhase = ((updatedEnemy.attackPhase ?? 0) + 1) % 4;
-                const centerX = updatedEnemy.x + updatedEnemy.width / 2;
-                if (updatedEnemy.attackPhase === 0) {
-                  for (let i = -3; i <= 3; i++) {
-                    newEnemyProjectiles.push({ id: now + i + Math.random(), x: centerX, y: updatedEnemy.y + updatedEnemy.height - 20, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED, vy: Math.sin(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED });
+
+              updatedEnemy.x += vx;
+              updatedEnemy.y += vy;
+              updatedEnemy.vx = vx;
+              updatedEnemy.vy = vy;
+              break;
+            }
+            case EnemyType.Charger: {
+              if (updatedEnemy.phase === 'descending') {
+                  updatedEnemy.y += ENEMY_SPEED;
+                  if (updatedEnemy.y >= CHARGER_STOP_Y) {
+                      updatedEnemy.y = CHARGER_STOP_Y;
+                      updatedEnemy.phase = 'charging';
+                      updatedEnemy.pauseTime = now;
                   }
-                } else if (updatedEnemy.attackPhase === 1 || updatedEnemy.attackPhase === 3) {
-                  for (let i = 0; i < (updatedEnemy.phase === 'phase2' ? 5 : 3); i++) {
-                    newEnemyProjectiles.push({ id: now + i * 100 + 100 + Math.random(), x: updatedEnemy.x + 20, y: updatedEnemy.y + updatedEnemy.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 });
-                    newEnemyProjectiles.push({ id: now + i * 100 + 200 + Math.random(), x: updatedEnemy.x + updatedEnemy.width - 20, y: updatedEnemy.y + updatedEnemy.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 });
+              } else if (updatedEnemy.phase === 'charging') {
+                  if (now - (updatedEnemy.pauseTime ?? 0) > CHARGER_CHARGE_DURATION) {
+                      updatedEnemy.phase = 'rushing';
                   }
-                } else {
-                  const angleToPlayer = Math.atan2(player.y - (updatedEnemy.y + updatedEnemy.height), player.x - centerX);
-                  for (let i = -1; i <= 1; i++) {
-                    newEnemyProjectiles.push({ id: now + 300 + i + Math.random(), x: centerX, y: updatedEnemy.y + updatedEnemy.height / 2, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5, vy: Math.sin(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5 });
+              } else if (updatedEnemy.phase === 'rushing') {
+                  updatedEnemy.y += CHARGER_RUSH_SPEED;
+              }
+              break;
+            }
+            case EnemyType.Weaver: {
+                const newY = updatedEnemy.y + ENEMY_SPEED / 2;
+                let newX = (updatedEnemy.initialX ?? updatedEnemy.x) + Math.sin(newY * WEAVER_FREQUENCY) * WEAVER_AMPLITUDE * (updatedEnemy.swoopDirection ?? 1);
+                
+                if (newX <= 0 || newX + updatedEnemy.width >= GAME_WIDTH) {
+                    updatedEnemy.swoopDirection = ((updatedEnemy.swoopDirection ?? 1) * -1) as 1 | -1;
+                    newX = Math.max(0, Math.min(newX, GAME_WIDTH - updatedEnemy.width));
+                    const sineOffset = Math.sin(newY * WEAVER_FREQUENCY) * WEAVER_AMPLITUDE * updatedEnemy.swoopDirection;
+                    updatedEnemy.initialX = newX - sineOffset;
+                }
+                
+                updatedEnemy.x = newX;
+                updatedEnemy.y = newY;
+                
+                if (now - (updatedEnemy.lastFired ?? 0) > WEAVER_MINE_RATE) {
+                    updatedEnemy.lastFired = now;
+                    newEnemyProjectiles.push({
+                        id: now + Math.random(),
+                        x: updatedEnemy.x + updatedEnemy.width / 2 - WEAVER_MINE_WIDTH / 2,
+                        y: updatedEnemy.y + updatedEnemy.height / 2,
+                        width: WEAVER_MINE_WIDTH,
+                        height: WEAVER_MINE_HEIGHT,
+                        vx: 0,
+                        vy: WEAVER_MINE_SPEED,
+                        projectileType: EnemyProjectileType.Mine,
+                    });
+                }
+                break;
+            }
+            case EnemyType.Guardian: {
+                if (updatedEnemy.phase === 'descending') {
+                    updatedEnemy.y += ENEMY_SPEED / 3;
+                    if (updatedEnemy.y >= GUARDIAN_STOP_Y) {
+                        updatedEnemy.y = GUARDIAN_STOP_Y;
+                        updatedEnemy.phase = 'active';
+                    }
+                }
+                break;
+            }
+            case EnemyType.Boss: {
+              if (updatedEnemy.phase === 'entering') {
+                updatedEnemy.y += ENEMY_SPEED / 2;
+                if (updatedEnemy.y >= BOSS_ENTER_Y) {
+                  updatedEnemy.y = BOSS_ENTER_Y;
+                  updatedEnemy.phase = 'phase1';
+                  updatedEnemy.attackTimer = now;
+                }
+              } else if (updatedEnemy.phase === 'phase1' || updatedEnemy.phase === 'phase2') {
+                updatedEnemy.horizontalDirection = updatedEnemy.horizontalDirection ?? 1;
+                updatedEnemy.x += BOSS_HORIZONTAL_SPEED * updatedEnemy.horizontalDirection;
+                if (updatedEnemy.x <= 0 || updatedEnemy.x >= GAME_WIDTH - updatedEnemy.width) {
+                  updatedEnemy.horizontalDirection *= -1;
+                }
+                if (updatedEnemy.hp < (updatedEnemy.maxHp ?? 0) / 2 && updatedEnemy.phase === 'phase1') {
+                  updatedEnemy.phase = 'phase2';
+                }
+        
+                const cooldown = updatedEnemy.phase === 'phase2' ? 800 : 1500;
+                if (now - (updatedEnemy.attackTimer ?? 0) > cooldown) {
+                  updatedEnemy.attackTimer = now;
+                  updatedEnemy.attackPhase = ((updatedEnemy.attackPhase ?? 0) + 1) % 4;
+                  const centerX = updatedEnemy.x + updatedEnemy.width / 2;
+                  if (updatedEnemy.attackPhase === 0) {
+                    for (let i = -3; i <= 3; i++) {
+                      newEnemyProjectiles.push({ projectileType: EnemyProjectileType.Standard, id: now + i + Math.random(), x: centerX, y: updatedEnemy.y + updatedEnemy.height - 20, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED, vy: Math.sin(Math.PI / 2 + (i * Math.PI / 12)) * ENEMY_PROJECTILE_SPEED });
+                    }
+                  } else if (updatedEnemy.attackPhase === 1 || updatedEnemy.attackPhase === 3) {
+                    for (let i = 0; i < (updatedEnemy.phase === 'phase2' ? 5 : 3); i++) {
+                      newEnemyProjectiles.push({ projectileType: EnemyProjectileType.Standard, id: now + i * 100 + 100 + Math.random(), x: updatedEnemy.x + 20, y: updatedEnemy.y + updatedEnemy.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 });
+                      newEnemyProjectiles.push({ projectileType: EnemyProjectileType.Standard, id: now + i * 100 + 200 + Math.random(), x: updatedEnemy.x + updatedEnemy.width - 20, y: updatedEnemy.y + updatedEnemy.height - 40, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: 0, vy: ENEMY_PROJECTILE_SPEED * 1.2 });
+                    }
+                  } else {
+                    const angleToPlayer = Math.atan2(player.y - (updatedEnemy.y + updatedEnemy.height), player.x - centerX);
+                    for (let i = -1; i <= 1; i++) {
+                      newEnemyProjectiles.push({ projectileType: EnemyProjectileType.Standard, id: now + 300 + i + Math.random(), x: centerX, y: updatedEnemy.y + updatedEnemy.height / 2, width: ENEMY_PROJECTILE_WIDTH, height: ENEMY_PROJECTILE_HEIGHT, vx: Math.cos(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5, vy: Math.sin(angleToPlayer + (i * Math.PI / 18)) * ENEMY_PROJECTILE_SPEED * 1.5 });
+                    }
                   }
                 }
               }
+              break;
             }
-            break;
+            default: // Standard, Splitter
+              if (!updatedEnemy.recoil) {
+                  updatedEnemy.y += ENEMY_SPEED;
+              }
+              break;
           }
-          default: // Standard, Splitter
-            if (!updatedEnemy.recoil) {
-                updatedEnemy.y += ENEMY_SPEED;
-            }
-            break;
         }
       
         return updatedEnemy;
@@ -996,12 +1263,16 @@ const gameReducer = (state: GameState, action: Action): GameState => {
           for (const enemy of enemies) {
               if (enemy.hp <= 0 || enemy.isClearing) continue;
               if (intersects(projectile, enemy)) {
+                if (enemy.type === EnemyType.Guardian && (enemy.shieldHp ?? 0) > 0) {
+                    enemy.shieldHp = (enemy.shieldHp ?? 0) - projectile.power;
+                } else {
                   enemy.hp -= projectile.power;
                   if (enemy.type !== EnemyType.Boss) {
                     enemy.recoil = ENEMY_RECOIL_AMOUNT;
                   }
-                  hitProjectileIds.add(projectile.id);
-                  break;
+                }
+                hitProjectileIds.add(projectile.id);
+                break;
               }
           }
       });
@@ -1011,7 +1282,11 @@ const gameReducer = (state: GameState, action: Action): GameState => {
         if (targetId === null) return;
         const target = enemies.find(e => e.id === targetId);
         if (target && target.hp > 0 && !target.isClearing) {
-            target.hp -= damage;
+            if (target.type === EnemyType.Guardian && (target.shieldHp ?? 0) > 0) {
+                target.shieldHp = (target.shieldHp ?? 0) - damage;
+            } else {
+                target.hp -= damage;
+            }
         }
       };
 
@@ -1044,9 +1319,13 @@ const gameReducer = (state: GameState, action: Action): GameState => {
 
       // --- UNIFIED DEATH PROCESSING ---
       const spawnedSplinters: Enemy[] = [];
+      let shouldSave = false;
+      const deathBurstProjectiles: EnemyProjectile[] = [];
+
       enemies.forEach(enemy => {
         if (enemy.hp <= 0 && !enemy.deathTime) {
             enemy.deathTime = now;
+            if (enemy.isTutorial) return; // Tutorial enemy gives no money/kills
             const cashBoostMultiplier = 1 + (state.cashBoostLevel - 1) * CASH_BOOST_PER_LEVEL;
             const earnedValue = Math.round(enemy.value * cashBoostMultiplier);
             money += earnedValue;
@@ -1056,6 +1335,7 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                 bossState = 'defeated';
                 bossDefeatedTime = now;
                 enemyProjectiles = []; // Clear boss projectiles on death
+                shouldSave = true;
             } else {
                 if (enemy.type !== EnemyType.Splinter) {
                     killCount += 1;
@@ -1078,6 +1358,8 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                             });
                             moneyGlowTime = now;
                         }
+                        
+                        shouldSave = true;
 
                         if (wave % WAVE_FOR_BOSS === 0) {
                             bossState = 'warning';
@@ -1097,145 +1379,226 @@ const gameReducer = (state: GameState, action: Action): GameState => {
                     });
                 }
             }
+            if (enemy.type === EnemyType.Guardian) {
+                for (let i = 0; i < GUARDIAN_DEATH_BURST_COUNT; i++) {
+                    const angle = (i / GUARDIAN_DEATH_BURST_COUNT) * 2 * Math.PI;
+                    deathBurstProjectiles.push({
+                        id: now + Math.random() + i,
+                        x: enemy.x + enemy.width / 2 - ENEMY_PROJECTILE_WIDTH / 2,
+                        y: enemy.y + enemy.height / 2 - ENEMY_PROJECTILE_HEIGHT / 2,
+                        width: ENEMY_PROJECTILE_WIDTH,
+                        height: ENEMY_PROJECTILE_HEIGHT,
+                        vx: Math.cos(angle) * ENEMY_PROJECTILE_SPEED,
+                        vy: Math.sin(angle) * ENEMY_PROJECTILE_SPEED,
+                        projectileType: EnemyProjectileType.Burst,
+                    });
+                }
+            }
         }
       });
+
+      if (deathBurstProjectiles.length > 0) {
+        enemyProjectiles = [...enemyProjectiles, ...deathBurstProjectiles];
+      }
+
+      if (shouldSave) {
+        saveGame({
+          money,
+          bulletRateLevel: state.bulletRateLevel,
+          bulletPowerLevel: state.bulletPowerLevel,
+          shipLevel: state.shipLevel,
+          interestLevel: state.interestLevel,
+          cashBoostLevel: state.cashBoostLevel,
+          shieldLevel: state.shieldLevel,
+          bulletRateCost: state.bulletRateCost,
+          bulletPowerCost: state.bulletPowerCost,
+          shipLevelCost: state.shipLevelCost,
+          interestCost: state.interestCost,
+          cashBoostCost: state.cashBoostCost,
+          shieldCost: state.shieldCost,
+        });
+      }
 
       if (spawnedSplinters.length > 0) enemies = [...enemies, ...spawnedSplinters];
       floatingTexts = [...floatingTexts, ...newFloatingTexts];
 
       // --- PLAYER COLLISION & BREACH DETECTION ---
-      const breachedEnemyIds = new Set<number>();
-      const newBreachExplosions: BreachExplosion[] = [];
-      let shieldsLost = 0;
-
-      const activeGameEnemies = enemies.filter(e => !e.isClearing && e.hp > 0);
-
-      activeGameEnemies.forEach(enemy => {
-        // Check for breach
-        if (enemy.y + enemy.height > (GAME_HEIGHT - UPGRADE_BAR_HEIGHT)) {
-            breachedEnemyIds.add(enemy.id);
-            shieldsLost++;
-            newBreachExplosions.push({
-                id: now + Math.random(),
-                x: enemy.x + enemy.width / 2,
-                startTime: now,
-            });
+      if (state.status === GameStatus.Playing) {
+        const breachedEnemyIds = new Set<number>();
+        const newBreachExplosions: BreachExplosion[] = [];
+        let shieldsLost = 0;
+  
+        const activeGameEnemies = enemies.filter(e => !e.isClearing && e.hp > 0);
+  
+        activeGameEnemies.forEach(enemy => {
+          // Check for breach
+          if (enemy.y + enemy.height > (GAME_HEIGHT - UPGRADE_BAR_HEIGHT)) {
+              breachedEnemyIds.add(enemy.id);
+              shieldsLost++;
+              newBreachExplosions.push({
+                  id: now + Math.random(),
+                  x: enemy.x + enemy.width / 2,
+                  startTime: now,
+              });
+          }
+        });
+        
+        let playerWasHitByCollision = false;
+        for (const enemy of activeGameEnemies) {
+          if (intersects(enemy, player)) {
+              playerWasHitByCollision = true;
+              break; 
+          }
         }
-      });
-      
-      let playerWasHitByCollision = false;
-      for (const enemy of activeGameEnemies) {
-        if (intersects(enemy, player)) {
-            playerWasHitByCollision = true;
-            break; 
+  
+        const hitEnemyProjectiles = new Set<number>();
+        let playerWasHitByProjectile = false;
+        for (const projectile of enemyProjectiles) {
+          if (intersects(projectile, player)) {
+              playerWasHitByProjectile = true;
+              hitEnemyProjectiles.add(projectile.id);
+              break;
+          }
         }
-      }
-
-      const hitEnemyProjectiles = new Set<number>();
-      let playerWasHitByProjectile = false;
-      for (const projectile of enemyProjectiles) {
-        if (intersects(projectile, player)) {
-            playerWasHitByProjectile = true;
-            hitEnemyProjectiles.add(projectile.id);
-            break;
+         if (playerWasHitByProjectile) {
+          enemyProjectiles = enemyProjectiles.filter(p => !hitEnemyProjectiles.has(p.id));
+         }
+  
+        if (shieldsLost > 0) {
+          shields -= shieldsLost;
+          breachExplosions = [...breachExplosions, ...newBreachExplosions];
+          enemies = enemies.filter(e => !breachedEnemyIds.has(e.id));
         }
-      }
-       if (playerWasHitByProjectile) {
-        enemyProjectiles = enemyProjectiles.filter(p => !hitEnemyProjectiles.has(p.id));
-       }
-
-      if (shieldsLost > 0) {
-        shields -= shieldsLost;
-        breachExplosions = [...breachExplosions, ...newBreachExplosions];
-        enemies = enemies.filter(e => !breachedEnemyIds.has(e.id));
-      }
-
-      if (playerWasHitByCollision || playerWasHitByProjectile) {
-        shields -= 1;
-        if (shields >= 0) {
-            playerHitTime = now;
-            enemies = enemies.map(e => e.type === EnemyType.Boss ? e : ({ ...e, isClearing: true, phase: undefined }));
-            enemyProjectiles = [];
+  
+        if (playerWasHitByCollision || playerWasHitByProjectile) {
+          shields -= 1;
+          if (shields >= 0) {
+              playerHitTime = now;
+              enemies = enemies.map(e => e.type === EnemyType.Boss ? e : ({ ...e, isClearing: true, phase: undefined }));
+              enemyProjectiles = [];
+          }
         }
-      }
-
-      if (shields < 0) {
-        return {
-            ...state, player, enemies, projectiles, enemyProjectiles, stars, particles, breachExplosions,
-            killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts,
-            shields: 0, playerHitTime, leftDrone, rightDrone, homingDrone, leftDroneTargetId,
-            rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime,
-            wave, bossState, bossWarningTime, bossDefeatedTime, moneyGlowTime,
-            status: GameStatus.GameOver,
-        };
+  
+        if (shields < 0) {
+          return {
+              ...state, player, enemies, projectiles, enemyProjectiles, stars, particles, breachExplosions,
+              killCount, money, lastEnemySpawn, lastProjectileSpawn, lastMissileSpawn, floatingTexts,
+              shields: 0, playerHitTime, leftDrone, rightDrone, homingDrone, leftDroneTargetId,
+              rightDroneTargetId, leftDroneState, rightDroneState, leftDroneStateTime, rightDroneStateTime,
+              wave, bossState, bossWarningTime, bossDefeatedTime, moneyGlowTime,
+              status: GameStatus.GameOver,
+          };
+        }
       }
     
       // --- PLAYER FIRING ---
-      const bulletPower = BASE_BULLET_POWER + ((state.bulletPowerLevel -1) * BULLET_POWER_INCREASE_PER_LEVEL);
-      const currentFireRate = Math.max(MIN_PROJECTILE_FIRE_RATE, BASE_PROJECTILE_FIRE_RATE - ((state.bulletRateLevel - 1) * FIRE_RATE_DECREASE_PER_LEVEL));
-      if (now - lastProjectileSpawn > currentFireRate) {
-        lastProjectileSpawn = now;
-        const createProjectile = (x: number, y: number, angle: number): Projectile => ({
-            id: now + Math.random(), x: x - PROJECTILE_WIDTH / 2, y: y, width: PROJECTILE_WIDTH, height: PROJECTILE_HEIGHT,
-            power: bulletPower, type: ProjectileType.Standard, angle,
-        });
-        const centerX = player.x + player.width / 2;
-        if (state.shipLevel === 1) projectiles.push(createProjectile(centerX, player.y, -Math.PI / 2));
-        else if (state.shipLevel === 2) { projectiles.push(createProjectile(centerX - PLAYER_WIDTH / 3, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX + PLAYER_WIDTH / 3, player.y, -Math.PI / 2)); } 
-        else if (state.shipLevel >= 3) { projectiles.push(createProjectile(centerX, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX - PLAYER_WIDTH / 2.5, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX + PLAYER_WIDTH / 2.5, player.y, -Math.PI / 2)); }
-      }
-
-      // --- SPAWN HOMING MISSILES ---
-      if (state.shipLevel >= 6) {
-        const numMissiles = state.shipLevel >= 12 ? 3 : state.shipLevel >= 9 ? 2 : 1;
-        if (now - lastMissileSpawn > (currentFireRate * 3) / numMissiles && visibleEnemies.length > 0) {
-            lastMissileSpawn = now;
-            const initialTargetY = GAME_HEIGHT * (1 - HOMING_MISSILE_INITIAL_TARGET_Y_FACTOR);
-            const initialTargetX = Math.random() * GAME_WIDTH;
-            const homingDroneSize = PLAYER_WIDTH * HOMING_DRONE_SCALE;
-
-            projectiles.push({
-                id: now + 500 + Math.random(), x: homingDrone.x + homingDroneSize / 2 - HOMING_MISSILE_WIDTH / 2, y: homingDrone.y,
-                width: HOMING_MISSILE_WIDTH, height: HOMING_MISSILE_HEIGHT, power: bulletPower, type: ProjectileType.Homing,
-                targetId: visibleEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)).id, angle: -Math.PI / 2,
-                phase: 'initialBoost', initialTargetX, initialTargetY, lastParticleSpawn: now,
-            });
+      if (state.status === GameStatus.Playing) {
+        const bulletPower = BASE_BULLET_POWER + ((state.bulletPowerLevel -1) * BULLET_POWER_INCREASE_PER_LEVEL);
+        const currentFireRate = Math.max(MIN_PROJECTILE_FIRE_RATE, BASE_PROJECTILE_FIRE_RATE - ((state.bulletRateLevel - 1) * FIRE_RATE_DECREASE_PER_LEVEL));
+        if (now - lastProjectileSpawn > currentFireRate) {
+          lastProjectileSpawn = now;
+          const createProjectile = (x: number, y: number, angle: number): Projectile => ({
+              id: now + Math.random(), x: x - PROJECTILE_WIDTH / 2, y: y, width: PROJECTILE_WIDTH, height: PROJECTILE_HEIGHT,
+              power: bulletPower, type: ProjectileType.Standard, angle,
+          });
+          const centerX = player.x + player.width / 2;
+          if (state.shipLevel === 1) projectiles.push(createProjectile(centerX, player.y, -Math.PI / 2));
+          else if (state.shipLevel === 2) { projectiles.push(createProjectile(centerX - PLAYER_WIDTH / 3, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX + PLAYER_WIDTH / 3, player.y, -Math.PI / 2)); } 
+          else if (state.shipLevel >= 3) { projectiles.push(createProjectile(centerX, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX - PLAYER_WIDTH / 2.5, player.y, -Math.PI / 2)); projectiles.push(createProjectile(centerX + PLAYER_WIDTH / 2.5, player.y, -Math.PI / 2)); }
+        }
+  
+        // --- SPAWN HOMING MISSILES ---
+        if (state.shipLevel >= 6) {
+          const numMissiles = state.shipLevel >= 12 ? 3 : state.shipLevel >= 9 ? 2 : 1;
+          if (now - lastMissileSpawn > (currentFireRate * 3) / numMissiles && visibleEnemies.length > 0) {
+              lastMissileSpawn = now;
+              const initialTargetY = GAME_HEIGHT * (1 - HOMING_MISSILE_INITIAL_TARGET_Y_FACTOR);
+              const initialTargetX = Math.random() * GAME_WIDTH;
+              const homingDroneSize = PLAYER_WIDTH * HOMING_DRONE_SCALE;
+  
+              projectiles.push({
+                  id: now + 500 + Math.random(), x: homingDrone.x + homingDroneSize / 2 - HOMING_MISSILE_WIDTH / 2, y: homingDrone.y,
+                  width: HOMING_MISSILE_WIDTH, height: HOMING_MISSILE_HEIGHT, power: bulletPower, type: ProjectileType.Homing,
+                  targetId: visibleEnemies.reduce((lowest, current) => (current.y > lowest.y ? current : lowest)).id, angle: -Math.PI / 2,
+                  phase: 'initialBoost', initialTargetX, initialTargetY, lastParticleSpawn: now,
+              });
+          }
         }
       }
       
       // --- ENEMY SPAWNING ---
-      const difficultyProgress = Math.min(1, (now - state.gameStartTime) / TIME_TO_MAX_DIFFICULTY);
-      const currentEnemySpawnRate = INITIAL_ENEMY_SPAWN_RATE - (INITIAL_ENEMY_SPAWN_RATE - MIN_ENEMY_SPAWN_RATE) * difficultyProgress;
-      if (now - lastEnemySpawn > currentEnemySpawnRate && bossState === 'none') {
-        lastEnemySpawn = now;
-        
-        // New logic for gradual difficulty increase
-        const rawHpLevel = difficultyProgress * MAX_ADDITIONAL_HP;
-        const baseHpLevel = Math.floor(rawHpLevel);
-        const transitionProgress = rawHpLevel - baseHpLevel;
-        
-        let chosenHpLevel = baseHpLevel;
-        if (Math.random() < transitionProgress) {
-            chosenHpLevel = Math.min(baseHpLevel + 1, MAX_ADDITIONAL_HP);
+      if (state.status === GameStatus.Playing) {
+        const difficultyProgress = Math.min(1, (now - state.gameStartTime) / TIME_TO_MAX_DIFFICULTY);
+        const currentEnemySpawnRate = INITIAL_ENEMY_SPAWN_RATE - (INITIAL_ENEMY_SPAWN_RATE - MIN_ENEMY_SPAWN_RATE) * difficultyProgress;
+        if (now - lastEnemySpawn > currentEnemySpawnRate && bossState === 'none') {
+          lastEnemySpawn = now;
+          
+          const rawHpLevel = difficultyProgress * MAX_ADDITIONAL_HP;
+          const baseHpLevel = Math.floor(rawHpLevel);
+          const transitionProgress = rawHpLevel - baseHpLevel;
+          
+          let chosenHpLevel = baseHpLevel;
+          if (Math.random() < transitionProgress) {
+              chosenHpLevel = Math.min(baseHpLevel + 1, MAX_ADDITIONAL_HP);
+          }
+  
+          const hp = BASE_ENEMY_HP + chosenHpLevel;
+          const color = ENEMY_COLORS[Math.min(chosenHpLevel, ENEMY_COLORS.length - 1)];
+          const value = BASE_ENEMY_VALUE + Math.floor(difficultyProgress * MAX_ADDITIONAL_VALUE);
+  
+          let type: EnemyType; 
+          const random = Math.random();
+          const d = difficultyProgress;
+          
+          if (d > 0.7 && random < 0.15) type = EnemyType.Guardian;
+          else if (d > 0.5 && random < 0.30) type = EnemyType.Weaver;
+          else if (d > 0.3 && random < 0.45) type = EnemyType.Charger;
+          else if (d > 0.6 && random < 0.55) type = EnemyType.Splitter;
+          else if (d > 0.4 && random < 0.70) type = EnemyType.Turret;
+          else if (d > 0.5 && random < 0.85) type = EnemyType.Dasher;
+          else if (d > 0.2 && random < 0.95) type = EnemyType.Swooper;
+          else type = EnemyType.Standard;
+          
+          let width = ENEMY_WIDTH;
+          let height = ENEMY_HEIGHT;
+          let newEnemy: Enemy;
+          
+          const baseEnemy = { id: now + Math.random(), y: -ENEMY_HEIGHT, hp, value, color, type };
+
+          // Refactored to set width/height based on type before calculating spawn position
+          switch (type) {
+            case EnemyType.Splitter:
+                width *= 1.2; height *= 1.2;
+                break;
+            case EnemyType.Charger:
+                height *= 1.2;
+                break;
+            case EnemyType.Weaver:
+                width *= 1.2;
+                break;
+            case EnemyType.Guardian:
+                width *= 1.3; height *= 1.3;
+                break;
+          }
+          newEnemy = { ...baseEnemy, width, height, x: Math.random() * (GAME_WIDTH - width), y: -height };
+          
+          if (type === EnemyType.Swooper) { newEnemy.initialX = newEnemy.x; newEnemy.swoopDirection = 1; }
+          if (type === EnemyType.Dasher) { newEnemy.phase = 'descending'; }
+          if (type === EnemyType.Turret) { newEnemy.phase = 'descending'; newEnemy.hp *= 2; newEnemy.value *= 2; newEnemy.horizontalDirection = Math.random() < 0.5 ? 1 : -1; }
+          if (type === EnemyType.Splitter) { newEnemy.hp *= SPLITTER_HP_MULTIPLIER; newEnemy.value = Math.floor(newEnemy.value * SPLITTER_VALUE_MULTIPLIER); }
+          if (type === EnemyType.Charger) { newEnemy.phase = 'descending'; newEnemy.hp *= 1.5; }
+          if (type === EnemyType.Weaver) { newEnemy.initialX = newEnemy.x; newEnemy.swoopDirection = Math.random() < 0.5 ? 1 : -1; newEnemy.lastFired = now; }
+          if (type === EnemyType.Guardian) { 
+              const shieldHp = GUARDIAN_BASE_SHIELD_HP + chosenHpLevel;
+              newEnemy.phase = 'descending'; 
+              newEnemy.hp *= 4; 
+              newEnemy.value *= 3;
+              newEnemy.shieldHp = shieldHp;
+              newEnemy.maxShieldHp = shieldHp;
+          }
+  
+          enemies.push(newEnemy);
         }
-
-        const hp = BASE_ENEMY_HP + chosenHpLevel;
-        const color = ENEMY_COLORS[Math.min(chosenHpLevel, ENEMY_COLORS.length - 1)];
-        const value = BASE_ENEMY_VALUE + Math.floor(difficultyProgress * MAX_ADDITIONAL_VALUE);
-
-        let type: EnemyType; const random = Math.random();
-        if (difficultyProgress > 0.6 && random < 0.15) type = EnemyType.Splitter;
-        else if (difficultyProgress > 0.4 && random < 0.40) type = EnemyType.Turret;
-        else if (difficultyProgress > 0.5 && random < 0.65) type = EnemyType.Dasher;
-        else if (difficultyProgress > 0.2 && random < 0.90) type = EnemyType.Swooper;
-        else type = EnemyType.Standard;
-        
-        const newEnemy: Enemy = { id: now + Math.random(), x: Math.random() * (GAME_WIDTH - ENEMY_WIDTH), y: -ENEMY_HEIGHT, width: ENEMY_WIDTH, height: ENEMY_HEIGHT, hp, value, color, type };
-        if (type === EnemyType.Swooper) { newEnemy.initialX = newEnemy.x; newEnemy.swoopDirection = 1; }
-        if (type === EnemyType.Dasher) { newEnemy.phase = 'descending'; }
-        if (type === EnemyType.Turret) { newEnemy.phase = 'descending'; newEnemy.hp *= 2; newEnemy.value *= 2; newEnemy.horizontalDirection = Math.random() < 0.5 ? 1 : -1; }
-        if (type === EnemyType.Splitter) { newEnemy.hp *= SPLITTER_HP_MULTIPLIER; newEnemy.value = Math.floor(newEnemy.value * SPLITTER_VALUE_MULTIPLIER); newEnemy.width *= 1.2; newEnemy.height *= 1.2; }
-        enemies.push(newEnemy);
       }
       
       // --- CLEANUP ---
@@ -1253,6 +1616,81 @@ const gameReducer = (state: GameState, action: Action): GameState => {
   }
 };
 
+const TutorialOverlay: React.FC<{ state: GameState; dispatch: React.Dispatch<Action> }> = ({ state, dispatch }) => {
+    const { tutorialStep, bulletRateCost } = state;
+
+    const tutorialSteps = [
+        {
+            text: "Welcome to ARES! This short tutorial will guide you through the basics.",
+            button: "Next",
+            action: () => dispatch({ type: 'ADVANCE_TUTORIAL' }),
+        },
+        {
+            text: "Your ship moves and targets enemies automatically. Your job is to shoot and manage upgrades.",
+            button: "Next",
+            action: () => dispatch({ type: 'ADVANCE_TUTORIAL' }),
+        },
+        {
+            text: "An enemy has appeared! Click or tap anywhere on the screen to fire your lasers and destroy it.",
+        },
+        {
+            text: "Great shot! Destroying enemies earns you cash. You can see your total at the top right.",
+            button: "Next",
+            action: () => dispatch({ type: 'ADVANCE_TUTORIAL' }),
+            highlight: "money",
+        },
+        {
+            text: `Use cash to buy upgrades from the bar below. Try upgrading your FIRE RATE now. It costs $${bulletRateCost}.`,
+            highlight: "firerate",
+        },
+        {
+            text: "Excellent! Other upgrades increase bullet POWER, improve your SHIP (more guns, drones), boost your economy (INTEREST, CASH), or add SHIELDS (lives).",
+            button: "Got It",
+            action: () => dispatch({ type: 'ADVANCE_TUTORIAL' }),
+        },
+        {
+            text: "You're now ready to fight. Upgrades get more expensive, so choose wisely! Good luck!",
+            button: "Start Game",
+            action: () => dispatch({ type: 'START_GAME' }),
+        },
+    ];
+
+    const currentStep = tutorialSteps[tutorialStep];
+    if (!currentStep) return null;
+
+    return (
+        <div className="absolute inset-0 bg-black/50 z-40 flex flex-col items-center justify-center p-4 pointer-events-none">
+            {/* Highlighter for Money */}
+            {currentStep.highlight === 'money' && (
+                <div className="absolute top-2 right-2 w-[130px] h-[62px] border-4 border-cyan-400 rounded-lg animate-pulse" />
+            )}
+            {/* Highlighter for Fire Rate Upgrade */}
+            {currentStep.highlight === 'firerate' && (
+                <div 
+                    className="absolute bottom-1 border-4 border-cyan-400 rounded-lg animate-pulse"
+                    style={{
+                        width: '72px', // w-16 + border
+                        height: '104px', // h-24 + border
+                        left: '8px', 
+                    }}
+                />
+            )}
+            
+            <div className="bg-black/80 border-2 border-cyan-400 shadow-[0_0_15px_#0ff] p-6 rounded-lg text-center max-w-sm">
+                <p className="text-lg mb-4">{currentStep.text}</p>
+                {currentStep.button && (
+                    <button onClick={currentStep.action} className="text-lg px-5 py-2 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_8px_#0ff] pointer-events-auto">
+                        {currentStep.button}
+                    </button>
+                )}
+            </div>
+            <button onClick={() => dispatch({ type: 'START_GAME' })} className="absolute bottom-8 left-1/2 -translate-x-1/2 text-sm text-gray-400 hover:text-white underline pointer-events-auto transition-colors">
+                Skip Tutorial
+            </button>
+        </div>
+    );
+};
+
 const App: React.FC = () => {
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState);
   const animationFrameId = useRef<number | null>(null);
@@ -1263,7 +1701,7 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (state.status === GameStatus.Playing) {
+    if (state.status === GameStatus.Playing || state.status === GameStatus.Tutorial) {
       animationFrameId.current = requestAnimationFrame(gameLoop);
     }
     return () => {
@@ -1296,14 +1734,16 @@ const App: React.FC = () => {
         return;
     }
     event.preventDefault();
-    if (state.status === GameStatus.Playing) {
+    if (state.status === GameStatus.Playing || (state.status === GameStatus.Tutorial && state.tutorialStep === 2)) {
       dispatch({ type: 'MANUAL_FIRE' });
     }
-  }, [state.status]);
+  }, [state.status, state.tutorialStep]);
 
+  const startTutorial = () => dispatch({ type: 'START_TUTORIAL' });
   const startGame = () => dispatch({ type: 'START_GAME' });
   const restartGame = () => dispatch({ type: 'RESTART' });
   const resetGame = () => dispatch({ type: 'RESET_GAME' });
+  const continueGame = () => dispatch({ type: 'CONTINUE_FROM_SAVE' });
   const upgradeBulletRate = () => dispatch({ type: 'UPGRADE_BULLET_RATE' });
   const upgradeBulletPower = () => dispatch({ type: 'UPGRADE_BULLET_POWER' });
   const upgradeShipLevel = () => dispatch({ type: 'UPGRADE_SHIP_LEVEL' });
@@ -1413,7 +1853,7 @@ const App: React.FC = () => {
           })}
 
 
-        {state.status === GameStatus.Playing && (
+        {(state.status === GameStatus.Playing || state.status === GameStatus.Tutorial) && (
           <>
             {/* Player */}
             <div className="absolute" style={{ left: state.player.x, top: state.player.y }}>
@@ -1480,6 +1920,7 @@ const App: React.FC = () => {
 
               return (
                 <div key={enemy.id} className="absolute" style={style}>
+                  {enemy.type === EnemyType.Guardian && <GuardianShieldStandalone enemy={enemy} />}
                   <EnemyShip enemy={enemy} />
                 </div>
               );
@@ -1495,7 +1936,7 @@ const App: React.FC = () => {
             {/* Enemy Projectiles */}
             {state.enemyProjectiles.map(p => (
               <div key={p.id} className="absolute" style={{ left: p.x, top: p.y }}>
-                 <EnemyProjectileShape />
+                 {p.projectileType === EnemyProjectileType.Mine ? <WeaverMineShape /> : <EnemyProjectileShape />}
               </div>
             ))}
 
@@ -1547,6 +1988,19 @@ const App: React.FC = () => {
 
         {/* UI Overlays */}
         <div className="absolute inset-0 flex items-center justify-center text-center pointer-events-none">
+          {state.status === GameStatus.WelcomeBack && (
+            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center gap-6 z-30 pointer-events-auto">
+                <h1 className="text-6xl font-bold text-cyan-400 filter drop-shadow-[0_0_8px_#0ff]">Welcome Back</h1>
+                <p className="text-2xl mt-2 text-cyan-300">Continue your progress?</p>
+                <button onClick={continueGame} className="mt-4 text-2xl px-6 py-3 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_10px_#0ff]">
+                  CONTINUE GAME
+                </button>
+                <button onClick={resetGame} className="mt-2 text-sm text-gray-400 hover:text-red-500 transition-colors">
+                  Start New Game
+                </button>
+            </div>
+          )}
+
           {state.status === GameStatus.Start && (
             <div className="flex flex-col items-center gap-6 pointer-events-auto">
               <div className="text-center">
@@ -1554,7 +2008,7 @@ const App: React.FC = () => {
                 <p className="text-2xl mt-2 text-cyan-300">A Really Easy Shooter</p>
                 <p className="text-lg mt-1 text-cyan-400/80">by Chris Franklyn</p>
               </div>
-              <button onClick={startGame} className="text-2xl px-6 py-3 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_10px_#0ff]">
+              <button onClick={startTutorial} className="text-2xl px-6 py-3 border-2 border-cyan-400 rounded-md hover:bg-cyan-400 hover:text-black transition-colors shadow-[0_0_10px_#0ff]">
                 START GAME
               </button>
             </div>
@@ -1577,12 +2031,14 @@ const App: React.FC = () => {
             </div>
           )}
 
-            {state.bossState === 'warning' && (
+            {state.status === GameStatus.Playing && state.bossState === 'warning' && (
                 <div className="z-20">
                     <h2 className="text-6xl font-bold text-red-500 filter drop-shadow-[0_0_8px_#f00] animate-pulse">WARNING</h2>
                 </div>
             )}
         </div>
+        
+        {state.status === GameStatus.Tutorial && <TutorialOverlay state={state} dispatch={dispatch} />}
 
         {/* Pause Menu */}
         {state.status === GameStatus.Paused && (
@@ -1600,7 +2056,7 @@ const App: React.FC = () => {
         )}
 
         {/* Score Display */}
-        {state.status === GameStatus.Playing && (
+        {(state.status === GameStatus.Playing || state.status === GameStatus.Tutorial) && (
           <>
             <div className="absolute top-4 left-4 text-left z-20">
                 <div className="text-2xl font-bold">KILLS: {state.killCount}</div>
@@ -1611,9 +2067,11 @@ const App: React.FC = () => {
                     <div className="text-2xl font-bold" style={moneyStyle}>${state.money}</div>
                     <div className="text-xl">WAVE: {state.bossState === 'defeated' ? state.wave + 1 : state.wave}</div>
                 </div>
-                <button onClick={pauseGame} className="p-2 text-white hover:text-cyan-400 transition-colors pointer-events-auto" aria-label="Pause Game">
-                    <PauseIcon />
-                </button>
+                {state.status === GameStatus.Playing && (
+                    <button onClick={pauseGame} className="p-2 text-white hover:text-cyan-400 transition-colors pointer-events-auto" aria-label="Pause Game">
+                        <PauseIcon />
+                    </button>
+                )}
             </div>
             {boss && state.bossState === 'fighting' && <BossHealthBar boss={boss} />}
           </>
